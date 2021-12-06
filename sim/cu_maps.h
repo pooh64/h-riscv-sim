@@ -52,18 +52,19 @@ struct CUFlags_Main {
 	bool branch : 1;
 	bool jump : 1;
 	u8 alu_op : 2;
+	bool intpt : 1;
 	bool opcode_ok : 1;
 	constexpr CUFlags_Main(bool reg_write_, CUResultSrc result_src_, CUIMMSrc imm_src_,
 			       bool alu_src2_imm_, bool mem_write_, bool branch_, bool jump_,
-			       u8 alu_op_)
+			       u8 alu_op_, bool intpt_)
 	    : reg_write(reg_write_), imm_src(imm_src_), alu_src2_imm(alu_src2_imm_),
 	      mem_write(mem_write_), result_src(result_src_), branch(branch_), jump(jump_),
-	      alu_op(alu_op_), opcode_ok(1)
+	      alu_op(alu_op_), intpt(intpt_), opcode_ok(1)
 	{
 	}
 	constexpr CUFlags_Main()
 	    : reg_write(0), imm_src(CUIMMSrc::TYPE_I), alu_src2_imm(0), mem_write(0),
-	      result_src(CUResultSrc::ALU), branch(0), jump(0), alu_op(0), opcode_ok(0){};
+	      result_src(CUResultSrc::ALU), branch(0), jump(0), alu_op(0), intpt(0), opcode_ok(0){};
 } __attribute__((packed));
 
 extern const MapTab<CUFlags_Main, 128> cu_flags_map;
