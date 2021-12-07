@@ -45,6 +45,18 @@ enum class CUResSrc : u8 {
 	PC,
 };
 
+enum class CUALUSrc1 : u8 {
+	X = 0,
+	R = 0,
+	PC = 1,
+};
+
+enum class CUALUSrc2 : u8 {
+	X = 0,
+	R = 0,
+	I = 1,
+};
+
 enum class CUALUCtrl : u8 {
 	X = 0,
 	ADD = 0,
@@ -71,7 +83,8 @@ enum class CUCMPCtrl : u8 {
 
 struct CUFlags_Main {
 	bool reg_write : 1;
-	bool alu_src2_imm : 1;
+	CUALUSrc1 alu_src1 : 1;
+	CUALUSrc2 alu_src2 : 1;
 	CUALUCtrl alu_control : 4;
 	CUCMPCtrl cmp_control : 4;
 	CUIMMSrc imm_src : 2;
@@ -81,17 +94,18 @@ struct CUFlags_Main {
 	bool jump : 1;
 	bool intpt : 1;
 	bool opcode_ok : 1;
-	constexpr CUFlags_Main(bool reg_write_, bool alu_src2_imm_, CUALUCtrl alu_control_,
-			       CUCMPCtrl cmp_control_, CUIMMSrc imm_src_,
+	constexpr CUFlags_Main(bool reg_write_, CUALUSrc1 alu_src1_, CUALUSrc2 alu_src2_,
+			       CUALUCtrl alu_control_, CUCMPCtrl cmp_control_, CUIMMSrc imm_src_,
 			       CUResSrc result_src_, bool mem_write_, bool branch_, bool jump_,
 			       bool intpt_)
-	    : reg_write(reg_write_), alu_src2_imm(alu_src2_imm_), alu_control(alu_control_),
-	      cmp_control(cmp_control_), imm_src(imm_src_), result_src(result_src_),
-	      mem_write(mem_write_), branch(branch_), jump(jump_), intpt(intpt_), opcode_ok(1)
+	    : reg_write(reg_write_), alu_src1(alu_src1_), alu_src2(alu_src2_),
+	      alu_control(alu_control_), cmp_control(cmp_control_), imm_src(imm_src_),
+	      result_src(result_src_), mem_write(mem_write_), branch(branch_), jump(jump_),
+	      intpt(intpt_), opcode_ok(1)
 	{
 	}
 	constexpr CUFlags_Main()
-	    : reg_write(0), alu_src2_imm(0), alu_control(CUALUCtrl::X),
+	    : reg_write(0), alu_src1(CUALUSrc1::X), alu_src2(CUALUSrc2::X), alu_control(CUALUCtrl::X),
 	      cmp_control(CUCMPCtrl::X), imm_src(CUIMMSrc::X), result_src(CUResSrc::X),
 	      mem_write(0), branch(0), jump(0), intpt(0), opcode_ok(0){};
 } __attribute__((packed));

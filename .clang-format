@@ -8,6 +8,6 @@ IndentCaseLabels: 'false'
 IndentWidth: '8'
 TabWidth: '8'
 UseTab: Always
-ColumnLimit: '100'
+ColumnLimit: '120'
 AllowShortFunctionsOnASingleLine: Empty
 ...

@@ -1,5 +1,6 @@
 add_executable(sim
 	sim.cpp
+	cpu.cpp
 	cu_maps.cpp
 )
 

@@ -106,7 +106,7 @@ struct MMU {
 			et = PL_HU::ExcType::MMU_MISS;
 			return false;
 		}
-		d = *addr;
+		*addr = d;
 		return true;
 	}
 };
@@ -149,7 +149,8 @@ struct PL_Execute final : Module {
 		u8 branch;
 		CUALUCtrl alu_ctrl;
 		CUCMPCtrl cmp_ctrl;
-		u8 alu_src2_imm;
+		CUALUSrc1 alu_src1;
+		CUALUSrc2 alu_src2;
 		bool intpt;
 		//
 		u32 pc;
@@ -195,7 +196,12 @@ struct PL_Wback final : Module {
 struct CPU final : Module {
 	CPU_MODULE;
 	MMU mmu;
-	CPU() {}
+	CPU()
+	{
+		fe.s.r.pc = 0x0;
+		de.s.r.inst.raw = 0x00000033; // do nothing
+	}
+	void execute();
 
 	PL_Fetch fe;
 	PL_Decode de;
@@ -323,6 +329,7 @@ inline constexpr u32 CPUSignExtend(u32 raw_, CUIMMSrc imm_src)
 		out.dj.imm2 = in.fj.imm2;
 		if (sgn)
 			out.dj.se--;
+		out.raw <<= 1; // jmp
 		break;
 	default:
 		assert(0);
@@ -336,15 +343,15 @@ inline void PL_Decode::Regfile::tick(CPU &cpu)
 	u8 a1 = cpu.de.s.r.inst.rs1;
 	u8 a2 = cpu.de.s.r.inst.rs2;
 	u8 a3 = cpu.wb.s.r.reg_addr;
-	u8 d3 = cpu.wb.s.r.reg_wdata;
+	u32 d3 = cpu.wb.s.r.reg_wdata;
 	u8 we3 = cpu.wb.s.r.reg_write;
 
-	cpu.ex.s.w.rs1v = gpr[a1];
-	cpu.ex.s.w.rs2v = gpr[a2];
 	if (we3) {
 		gpr[a3] = d3;
 		gpr[0] = 0;
 	}
+	cpu.ex.s.w.rs1v = gpr[a1];
+	cpu.ex.s.w.rs2v = gpr[a2];
 }
 
 inline void PL_Decode::init() {}
@@ -361,7 +368,8 @@ inline void PL_Decode::tick(CPU &cpu)
 	cpu.ex.s.w.branch = cf.branch;
 	cpu.ex.s.w.alu_ctrl = cf.alu_control;
 	cpu.ex.s.w.cmp_ctrl = cf.cmp_control;
-	cpu.ex.s.w.alu_src2_imm = cf.alu_src2_imm;
+	cpu.ex.s.w.alu_src1 = cf.alu_src1;
+	cpu.ex.s.w.alu_src2 = cf.alu_src2;
 	cpu.ex.s.w.intpt = cf.intpt;
 	if (!cf.opcode_ok)
 		cpu.hu.RaiseExcept(PL_HU::ExcStage::DE, PL_HU::ExcType::BAD_OPCODE, cpu.de.s.r.pc);
@@ -449,7 +457,9 @@ inline void PL_Execute::tick(CPU &cpu)
 	u32 rs2v = fwd_select(cpu.hu.getRegFWD(cpu, cpu.ex.s.r.rs2a), cpu.ex.s.r.rs2v);
 	jrs1v = rs1v;
 
-	if (cpu.ex.s.r.alu_src2_imm)
+	if (cpu.ex.s.r.alu_src1 == CUALUSrc1::PC)
+		rs1v = cpu.ex.s.r.pc;
+	if (cpu.ex.s.r.alu_src2 == CUALUSrc2::I)
 		rs2v = cpu.ex.s.r.imm_ext;
 
 	u32 alu_res = ALUOperator(cpu.ex.s.r.alu_ctrl, rs1v, rs2v);
@@ -522,8 +532,8 @@ inline void PL_HU::init() {}
 inline void PL_HU::tick(CPU &cpu)
 {
 	bool load_hazard =
-	    (cpu.ex.s.r.result_src == CUResSrc::MEM) &
-	    ((cpu.ex.s.r.rda == cpu.de.s.r.inst.rs1) | (cpu.ex.s.r.rda == cpu.de.s.r.inst.rs2));
+	    (cpu.ex.s.r.result_src == CUResSrc::MEM) &&
+	    ((cpu.ex.s.r.rda == cpu.de.s.r.inst.rs1) || (cpu.ex.s.r.rda == cpu.de.s.r.inst.rs2));
 
 	bool pc_flush = cpu.ex.pc_r;
 

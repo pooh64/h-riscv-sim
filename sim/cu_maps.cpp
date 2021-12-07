@@ -8,10 +8,10 @@ namespace cpu
 
 #define D constexpr CUFlags_Main
 D cf_ill{};
-D cf_lw(1, 1, CUALUCtrl::ADD, CUCMPCtrl::X, CUIMMSrc::TYPE_I, CUResSrc::MEM, 0, 0, 0, 0);
-D cf_int(0, 0, CUALUCtrl::X, CUCMPCtrl::X, CUIMMSrc::TYPE_I, CUResSrc::X, 0, 0, 0, 1);
-D cf_add(1, 0, CUALUCtrl::ADD, CUCMPCtrl::X, CUIMMSrc::X, CUResSrc::ALU, 0, 0, 0, 0);
-D cf_sub(1, 0, CUALUCtrl::SUB, CUCMPCtrl::X, CUIMMSrc::X, CUResSrc::ALU, 0, 0, 0, 0);
+D cf_lw(1, CUALUSrc1::R, CUALUSrc2::I, CUALUCtrl::ADD, CUCMPCtrl::X, CUIMMSrc::TYPE_I, CUResSrc::MEM, 0, 0, 0, 0);
+D cf_int(0, CUALUSrc1::R, CUALUSrc2::I, CUALUCtrl::X, CUCMPCtrl::X, CUIMMSrc::TYPE_I, CUResSrc::X, 0, 0, 0, 1);
+D cf_add(1, CUALUSrc1::R, CUALUSrc2::R, CUALUCtrl::ADD, CUCMPCtrl::X, CUIMMSrc::X, CUResSrc::ALU, 0, 0, 0, 0);
+D cf_sub(1, CUALUSrc1::R, CUALUSrc2::R, CUALUCtrl::SUB, CUCMPCtrl::X, CUIMMSrc::X, CUResSrc::ALU, 0, 0, 0, 0);
 #undef D
 
 CUFlags_Main GetCUFlags(Instr inst)
