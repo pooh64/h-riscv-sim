@@ -31,42 +31,74 @@ union Instr {
 static_assert(sizeof(Instr) == 4);
 
 enum class CUIMMSrc : u8 {
-	TYPE_I,
+	X = 0,
+	TYPE_I = 0,
 	TYPE_S,
 	TYPE_B,
 	TYPE_J,
 };
 
-enum class CUResultSrc : u8 {
-	ALU,
+enum class CUResSrc : u8 {
+	X = 0,
+	ALU = 0,
 	MEM,
 	PC,
 };
 
+enum class CUALUCtrl : u8 {
+	X = 0,
+	ADD = 0,
+	SUB,
+	SLL,
+	SLT,
+	SLTU,
+	XOR,
+	SRL,
+	SRA,
+	OR,
+	AND,
+};
+
+enum class CUCMPCtrl : u8 {
+	X = 0,
+	EQ = 0,
+	NE,
+	LT,
+	GE,
+	LTU,
+	GEU,
+};
+
 struct CUFlags_Main {
 	bool reg_write : 1;
-	CUIMMSrc imm_src : 2;
 	bool alu_src2_imm : 1;
+	CUALUCtrl alu_control : 4;
+	CUCMPCtrl cmp_control : 4;
+	CUIMMSrc imm_src : 2;
+	CUResSrc result_src : 2;
 	bool mem_write : 1;
-	CUResultSrc result_src : 2;
 	bool branch : 1;
 	bool jump : 1;
-	u8 alu_op : 2;
 	bool intpt : 1;
 	bool opcode_ok : 1;
-	constexpr CUFlags_Main(bool reg_write_, CUResultSrc result_src_, CUIMMSrc imm_src_,
-			       bool alu_src2_imm_, bool mem_write_, bool branch_, bool jump_,
-			       u8 alu_op_, bool intpt_)
-	    : reg_write(reg_write_), imm_src(imm_src_), alu_src2_imm(alu_src2_imm_),
-	      mem_write(mem_write_), result_src(result_src_), branch(branch_), jump(jump_),
-	      alu_op(alu_op_), intpt(intpt_), opcode_ok(1)
+	constexpr CUFlags_Main(bool reg_write_, bool alu_src2_imm_, CUALUCtrl alu_control_,
+			       CUCMPCtrl cmp_control_, CUIMMSrc imm_src_,
+			       CUResSrc result_src_, bool mem_write_, bool branch_, bool jump_,
+			       bool intpt_)
+	    : reg_write(reg_write_), alu_src2_imm(alu_src2_imm_), alu_control(alu_control_),
+	      cmp_control(cmp_control_), imm_src(imm_src_), result_src(result_src_),
+	      mem_write(mem_write_), branch(branch_), jump(jump_), intpt(intpt_), opcode_ok(1)
 	{
 	}
 	constexpr CUFlags_Main()
-	    : reg_write(0), imm_src(CUIMMSrc::TYPE_I), alu_src2_imm(0), mem_write(0),
-	      result_src(CUResultSrc::ALU), branch(0), jump(0), alu_op(0), intpt(0), opcode_ok(0){};
+	    : reg_write(0), alu_src2_imm(0), alu_control(CUALUCtrl::X),
+	      cmp_control(CUCMPCtrl::X), imm_src(CUIMMSrc::X), result_src(CUResSrc::X),
+	      mem_write(0), branch(0), jump(0), intpt(0), opcode_ok(0){};
 } __attribute__((packed));
 
+CUFlags_Main GetCUFlags(Instr inst);
+
+#if 0
 extern const MapTab<CUFlags_Main, 128> cu_flags_map;
 static inline CUFlags_Main GetCUFlags(Instr inst)
 {
@@ -76,18 +108,6 @@ static inline CUFlags_Main GetCUFlags(Instr inst)
 	// assert(res.opcode_ok);
 	return res;
 }
-
-enum class CUALUControl : u8 {
-	ADD,
-	SUB,
-	AND,
-	OR,
-	XOR,
-	SLT,
-	SLTU,
-	GE,
-	GEU,
-};
 
 union CUALU_in {
 	struct {
@@ -99,8 +119,8 @@ union CUALU_in {
 	u8 raw;
 };
 
-extern const MapTab<CUALUControl, 128> cu_alu_map;
-static inline CUALUControl GetALUControl(Instr inst, CUFlags_Main cu_flags)
+extern const MapTab<CUALUCtrl, 128> cu_alu_map;
+static inline CUALUCtrl GetALUControl(Instr inst, CUFlags_Main cu_flags)
 {
 	CUALU_in cfa_in;
 	cfa_in.alu_op = cu_flags.alu_op;
@@ -109,5 +129,6 @@ static inline CUALUControl GetALUControl(Instr inst, CUFlags_Main cu_flags)
 	cfa_in.op_5 = inst.op;
 	return cu_alu_map.tab[cfa_in.raw];
 }
+#endif
 
 } // namespace cpu

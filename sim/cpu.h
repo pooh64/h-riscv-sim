@@ -144,10 +144,11 @@ struct PL_Execute final : Module {
 	struct State {
 		u8 reg_write;
 		u8 mem_write;
-		CUResultSrc result_src;
+		CUResSrc result_src;
 		u8 jump;
 		u8 branch;
-		CUALUControl alu_ctrl;
+		CUALUCtrl alu_ctrl;
+		CUCMPCtrl cmp_ctrl;
 		u8 alu_src2_imm;
 		bool intpt;
 		//
@@ -170,7 +171,7 @@ struct PL_Memory final : Module {
 	struct State {
 		u8 reg_write;
 		u8 mem_write;
-		CUResultSrc result_src;
+		CUResSrc result_src;
 		//
 		u8 reg_addr;
 		u32 pc_next;
@@ -358,7 +359,8 @@ inline void PL_Decode::tick(CPU &cpu)
 	cpu.ex.s.w.mem_write = cf.mem_write && !cpu.de.s.r.v;
 	cpu.ex.s.w.jump = cf.jump;
 	cpu.ex.s.w.branch = cf.branch;
-	cpu.ex.s.w.alu_ctrl = GetALUControl(inst, cf);
+	cpu.ex.s.w.alu_ctrl = cf.alu_control;
+	cpu.ex.s.w.cmp_ctrl = cf.cmp_control;
 	cpu.ex.s.w.alu_src2_imm = cf.alu_src2_imm;
 	cpu.ex.s.w.intpt = cf.intpt;
 	if (!cf.opcode_ok)
@@ -375,27 +377,49 @@ inline void PL_Decode::tick(CPU &cpu)
 }
 
 /**********************************************************/
-inline constexpr u32 ALUOperator(CUALUControl alu_ctrl, u32 a, u32 b)
+inline constexpr u32 ALUOperator(CUALUCtrl alu_ctrl, u32 a, u32 b)
 {
 	switch (alu_ctrl) {
-	case CUALUControl::ADD:
+	case CUALUCtrl::ADD:
 		return a + b;
-	case CUALUControl::SUB:
+	case CUALUCtrl::SUB:
 		return a - b;
-	case CUALUControl::AND:
-		return a & b;
-	case CUALUControl::OR:
-		return a | b;
-	case CUALUControl::XOR:
-		return a ^ b;
-	case CUALUControl::SLT:
+	case CUALUCtrl::SLL:
+		return a << (b & 32);
+	case CUALUCtrl::SLT:
 		return !!((i32)a < (i32)b);
-	case CUALUControl::SLTU:
+	case CUALUCtrl::SLTU:
 		return !!(a < b);
-	case CUALUControl::GE:
-		return !!((i32)a >= (i32)b);
-	case CUALUControl::GEU:
-		return !!(a >= b);
+	case CUALUCtrl::XOR:
+		return a ^ b;
+	case CUALUCtrl::SRL:
+		return a >> (b & 32);
+	case CUALUCtrl::SRA:
+		return (i32)a >> (b & 32);
+	case CUALUCtrl::OR:
+		return a | b;
+	case CUALUCtrl::AND:
+		return a & b;
+	default:
+		assert(0);
+	};
+}
+
+inline constexpr bool CMPOperator(CUCMPCtrl cmp_ctrl, u32 a, u32 b)
+{
+	switch (cmp_ctrl) {
+	case CUCMPCtrl::EQ:
+		return a == b;
+	case CUCMPCtrl::NE:
+		return a != b;
+	case CUCMPCtrl::LT:
+		return (i32)a < (i32)b;
+	case CUCMPCtrl::GE:
+		return (i32)a >= (i32)b;
+	case CUCMPCtrl::LTU:
+		return a < b;
+	case CUCMPCtrl::GEU:
+		return a >= b;
 	default:
 		assert(0);
 	};
@@ -431,7 +455,9 @@ inline void PL_Execute::tick(CPU &cpu)
 	u32 alu_res = ALUOperator(cpu.ex.s.r.alu_ctrl, rs1v, rs2v);
 	cpu.mem.s.w.alu_res = alu_res;
 
-	cpu.ex.pc_r = cpu.ex.s.r.jump || (cpu.ex.s.r.branch && (alu_res == 0));
+	bool cmp_res = CMPOperator(cpu.ex.s.r.cmp_ctrl, rs1v, rs2v);
+
+	cpu.ex.pc_r = cpu.ex.s.r.jump || (cpu.ex.s.r.branch && cmp_res);
 	cpu.mem.s.w.mem_wdata = rs2v;
 	cpu.mem.s.w.pc_next = cpu.ex.s.r.pc_next;
 	cpu.mem.s.w.pc = cpu.ex.s.r.pc;
@@ -446,7 +472,7 @@ inline void PL_Memory::tick(CPU &cpu)
 {
 	u32 mmu_rd;
 	PL_HU::ExcType et;
-	if (cpu.mem.s.r.result_src == CUResultSrc::MEM) {
+	if (cpu.mem.s.r.result_src == CUResSrc::MEM) {
 		if (!cpu.mmu.load(cpu.mem.s.r.alu_res, &mmu_rd, et))
 			cpu.hu.RaiseExcept(PL_HU::ExcStage::MEM, et, cpu.mem.s.r.pc);
 	}
@@ -456,13 +482,13 @@ inline void PL_Memory::tick(CPU &cpu)
 	}
 
 	switch (cpu.mem.s.r.result_src) {
-	case CUResultSrc::ALU:
+	case CUResSrc::ALU:
 		cpu.wb.s.w.reg_wdata = cpu.mem.s.r.alu_res;
 		break;
-	case CUResultSrc::MEM:
+	case CUResSrc::MEM:
 		cpu.wb.s.w.reg_wdata = mmu_rd;
 		break;
-	case CUResultSrc::PC:
+	case CUResSrc::PC:
 		cpu.wb.s.w.reg_wdata = cpu.mem.s.r.pc_next;
 		break;
 	default:
@@ -496,7 +522,7 @@ inline void PL_HU::init() {}
 inline void PL_HU::tick(CPU &cpu)
 {
 	bool load_hazard =
-	    (cpu.ex.s.r.result_src == CUResultSrc::MEM) & 
+	    (cpu.ex.s.r.result_src == CUResSrc::MEM) &
 	    ((cpu.ex.s.r.rda == cpu.de.s.r.inst.rs1) | (cpu.ex.s.r.rda == cpu.de.s.r.inst.rs2));
 
 	bool pc_flush = cpu.ex.pc_r;
@@ -511,7 +537,7 @@ inline void PL_HU::tick(CPU &cpu)
 	if (exc_stage >= ExcStage::EX) {
 		cpu.mem.s.w.reg_write = 0;
 		cpu.mem.s.w.mem_write = 0;
-		cpu.mem.s.w.result_src = CUResultSrc::ALU;
+		cpu.mem.s.w.result_src = CUResSrc::ALU;
 		cpu.mem.s.tick(cpu);
 	} else if (!false) {
 		cpu.mem.s.tick(cpu);
@@ -520,7 +546,7 @@ inline void PL_HU::tick(CPU &cpu)
 	if (load_hazard || pc_flush || exc_stage >= ExcStage::DE) {
 		cpu.ex.s.w.reg_write = 0;
 		cpu.ex.s.w.mem_write = 0;
-		cpu.ex.s.w.result_src = CUResultSrc::ALU;
+		cpu.ex.s.w.result_src = CUResSrc::ALU;
 		cpu.ex.s.tick(cpu);
 	} else if (!false) {
 		cpu.ex.s.tick(cpu);
