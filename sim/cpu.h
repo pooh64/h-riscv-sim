@@ -11,8 +11,8 @@ struct Module {
 	virtual inline void init() = 0;
 	virtual inline void tick(CPU &) = 0;
 };
-#define CPU_MODULE                                                                                 \
-	inline void init();                                                                        \
+#define CPU_MODULE                                                                                                     \
+	inline void init();                                                                                            \
 	inline void tick(CPU &);
 
 template <typename T>
@@ -202,6 +202,7 @@ struct CPU final : Module {
 		de.s.r.inst.raw = 0x00000033; // do nothing
 	}
 	void execute();
+	u32 time = 0;
 
 	PL_Fetch fe;
 	PL_Decode de;
@@ -221,6 +222,7 @@ inline void CPU::tick(CPU &cpu)
 	fe.tick(cpu);
 
 	hu.tick(cpu);
+	time++;
 }
 
 /**********************************************************/
@@ -304,18 +306,18 @@ inline constexpr u32 CPUSignExtend(u32 raw_, CUIMMSrc imm_src)
 	u8 sgn = (in.raw >> 31) & 1;
 
 	switch (imm_src) {
-	case CUIMMSrc::TYPE_I:
+	case CUIMMSrc::I:
 		out.di.imm0 = in.fi.imm0;
 		if (sgn)
 			out.di.se--;
 		break;
-	case CUIMMSrc::TYPE_S:
+	case CUIMMSrc::S:
 		out.ds.imm0 = in.fs.imm0;
 		out.ds.imm1 = in.fs.imm1;
 		if (sgn)
 			out.ds.se--;
 		break;
-	case CUIMMSrc::TYPE_B:
+	case CUIMMSrc::B:
 		out.db.imm0 = in.fb.imm0;
 		out.db.imm1 = in.fb.imm1;
 		out.db.imm2 = in.fb.imm2;
@@ -323,7 +325,7 @@ inline constexpr u32 CPUSignExtend(u32 raw_, CUIMMSrc imm_src)
 			out.db.se--;
 		out.raw <<= 1; // branch
 		break;
-	case CUIMMSrc::TYPE_J:
+	case CUIMMSrc::J:
 		out.dj.imm0 = in.fj.imm0;
 		out.dj.imm1 = in.fj.imm1;
 		out.dj.imm2 = in.fj.imm2;
@@ -362,15 +364,15 @@ inline void PL_Decode::tick(CPU &cpu)
 	CUFlags_Main cf = GetCUFlags(inst);
 
 	cpu.ex.s.w.reg_write = cf.reg_write && !cpu.de.s.r.v;
-	cpu.ex.s.w.result_src = cf.result_src;
+	cpu.ex.s.w.result_src = cpu.de.s.r.v ? CUResSrc::ALU : cf.result_src;
 	cpu.ex.s.w.mem_write = cf.mem_write && !cpu.de.s.r.v;
-	cpu.ex.s.w.jump = cf.jump;
-	cpu.ex.s.w.branch = cf.branch;
+	cpu.ex.s.w.jump = cf.jump && !cpu.de.s.r.v;
+	cpu.ex.s.w.branch = cf.branch && !cpu.de.s.r.v;
+	cpu.ex.s.w.intpt = cf.intpt && !cpu.de.s.r.v;
 	cpu.ex.s.w.alu_ctrl = cf.alu_control;
 	cpu.ex.s.w.cmp_ctrl = cf.cmp_control;
 	cpu.ex.s.w.alu_src1 = cf.alu_src1;
 	cpu.ex.s.w.alu_src2 = cf.alu_src2;
-	cpu.ex.s.w.intpt = cf.intpt;
 	if (!cf.opcode_ok)
 		cpu.hu.RaiseExcept(PL_HU::ExcStage::DE, PL_HU::ExcType::BAD_OPCODE, cpu.de.s.r.pc);
 
@@ -453,22 +455,22 @@ inline void PL_Execute::tick(CPU &cpu)
 		}
 		assert(0);
 	};
-	u32 rs1v = fwd_select(cpu.hu.getRegFWD(cpu, cpu.ex.s.r.rs1a), cpu.ex.s.r.rs1v);
-	u32 rs2v = fwd_select(cpu.hu.getRegFWD(cpu, cpu.ex.s.r.rs2a), cpu.ex.s.r.rs2v);
-	jrs1v = rs1v;
+	u32 sv1 = fwd_select(cpu.hu.getRegFWD(cpu, cpu.ex.s.r.rs1a), cpu.ex.s.r.rs1v);
+	u32 sv2 = fwd_select(cpu.hu.getRegFWD(cpu, cpu.ex.s.r.rs2a), cpu.ex.s.r.rs2v);
+	jrs1v = sv1;
+	cpu.mem.s.w.mem_wdata = sv2;
 
 	if (cpu.ex.s.r.alu_src1 == CUALUSrc1::PC)
-		rs1v = cpu.ex.s.r.pc;
+		sv1 = cpu.ex.s.r.pc;
 	if (cpu.ex.s.r.alu_src2 == CUALUSrc2::I)
-		rs2v = cpu.ex.s.r.imm_ext;
+		sv2 = cpu.ex.s.r.imm_ext;
 
-	u32 alu_res = ALUOperator(cpu.ex.s.r.alu_ctrl, rs1v, rs2v);
+	u32 alu_res = ALUOperator(cpu.ex.s.r.alu_ctrl, sv1, sv2);
 	cpu.mem.s.w.alu_res = alu_res;
 
-	bool cmp_res = CMPOperator(cpu.ex.s.r.cmp_ctrl, rs1v, rs2v);
+	bool cmp_res = CMPOperator(cpu.ex.s.r.cmp_ctrl, sv1, sv2);
 
 	cpu.ex.pc_r = cpu.ex.s.r.jump || (cpu.ex.s.r.branch && cmp_res);
-	cpu.mem.s.w.mem_wdata = rs2v;
 	cpu.mem.s.w.pc_next = cpu.ex.s.r.pc_next;
 	cpu.mem.s.w.pc = cpu.ex.s.r.pc;
 
@@ -531,11 +533,15 @@ inline PL_HU::FWD PL_HU::getRegFWD(CPU &cpu, u8 rsa)
 inline void PL_HU::init() {}
 inline void PL_HU::tick(CPU &cpu)
 {
-	bool load_hazard =
-	    (cpu.ex.s.r.result_src == CUResSrc::MEM) &&
-	    ((cpu.ex.s.r.rda == cpu.de.s.r.inst.rs1) || (cpu.ex.s.r.rda == cpu.de.s.r.inst.rs2));
+	bool load_hazard = (cpu.ex.s.r.result_src == CUResSrc::MEM) &&
+			   ((cpu.ex.s.r.rda == cpu.de.s.r.inst.rs1) || (cpu.ex.s.r.rda == cpu.de.s.r.inst.rs2));
 
 	bool pc_flush = cpu.ex.pc_r;
+
+	if ((pc_flush || load_hazard) && exc_stage <= ExcStage::DE) {
+		exc_stage = ExcStage::NO;
+		flush_cnt = -1;
+	}
 
 	if (exc_stage >= ExcStage::MEM) {
 		cpu.wb.s.w.reg_write = 0;
@@ -557,6 +563,9 @@ inline void PL_HU::tick(CPU &cpu)
 		cpu.ex.s.w.reg_write = 0;
 		cpu.ex.s.w.mem_write = 0;
 		cpu.ex.s.w.result_src = CUResSrc::ALU;
+		cpu.ex.s.w.branch = 0;
+		cpu.ex.s.w.jump = 0;
+		cpu.ex.s.w.intpt = 0;
 		cpu.ex.s.tick(cpu);
 	} else if (!false) {
 		cpu.ex.s.tick(cpu);
@@ -570,7 +579,7 @@ inline void PL_HU::tick(CPU &cpu)
 	}
 
 	if (exc_stage > ExcStage::NO) {
-		cpu.fe.s.w.pc = 128; // exception handler
+		cpu.fe.s.w.pc = 1024; // exception handler
 	} else if (!load_hazard) {
 		cpu.fe.s.tick(cpu);
 	}

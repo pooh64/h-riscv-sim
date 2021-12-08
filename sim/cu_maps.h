@@ -32,10 +32,10 @@ static_assert(sizeof(Instr) == 4);
 
 enum class CUIMMSrc : u8 {
 	X = 0,
-	TYPE_I = 0,
-	TYPE_S,
-	TYPE_B,
-	TYPE_J,
+	I = 0,
+	S,
+	B,
+	J,
 };
 
 enum class CUResSrc : u8 {
