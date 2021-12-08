@@ -8,13 +8,14 @@ namespace cpu
 
 #define D constexpr CUFlags_Main
 D cf_ill{};
-D cf_jal(1, CUALUSrc1::X, CUALUSrc2::X, CUALUCtrl::X, CUCMPCtrl::X, CUIMMSrc::J, CUResSrc::PC, 0, 0, 1, 0);
-D cf_lw(1, CUALUSrc1::R, CUALUSrc2::I, CUALUCtrl::ADD, CUCMPCtrl::X, CUIMMSrc::I, CUResSrc::MEM, 0, 0, 0, 0);
-D cf_sw(0, CUALUSrc1::R, CUALUSrc2::I, CUALUCtrl::ADD, CUCMPCtrl::X, CUIMMSrc::S, CUResSrc::X, 1, 0, 0, 0);
-D cf_addi(1, CUALUSrc1::R, CUALUSrc2::I, CUALUCtrl::ADD, CUCMPCtrl::X, CUIMMSrc::I, CUResSrc::ALU, 0, 0, 0, 0);
-D cf_add(1, CUALUSrc1::R, CUALUSrc2::R, CUALUCtrl::ADD, CUCMPCtrl::X, CUIMMSrc::X, CUResSrc::ALU, 0, 0, 0, 0);
-D cf_sub(1, CUALUSrc1::R, CUALUSrc2::R, CUALUCtrl::SUB, CUCMPCtrl::X, CUIMMSrc::X, CUResSrc::ALU, 0, 0, 0, 0);
-D cf_int(0, CUALUSrc1::R, CUALUSrc2::I, CUALUCtrl::X, CUCMPCtrl::X, CUIMMSrc::I, CUResSrc::X, 0, 0, 0, 1);
+D cf_jal(1, CUALUSrc1::X, CUALUSrc2::X, CUALUCtrl::X, CUCMPCtrl::X, CUIMMSrc::J, CUResSrc::PC, 0, 0, 1, 0, 0);
+D cf_jalr(1, CUALUSrc1::X, CUALUSrc2::X, CUALUCtrl::X, CUCMPCtrl::X, CUIMMSrc::I, CUResSrc::PC, 0, 0, 1, 1, 0);
+D cf_lw(1, CUALUSrc1::R, CUALUSrc2::I, CUALUCtrl::ADD, CUCMPCtrl::X, CUIMMSrc::I, CUResSrc::MEM, 0, 0, 0, 0, 0);
+D cf_sw(0, CUALUSrc1::R, CUALUSrc2::I, CUALUCtrl::ADD, CUCMPCtrl::X, CUIMMSrc::S, CUResSrc::X, 1, 0, 0, 0, 0);
+D cf_addi(1, CUALUSrc1::R, CUALUSrc2::I, CUALUCtrl::ADD, CUCMPCtrl::X, CUIMMSrc::I, CUResSrc::ALU, 0, 0, 0, 0, 0);
+D cf_add(1, CUALUSrc1::R, CUALUSrc2::R, CUALUCtrl::ADD, CUCMPCtrl::X, CUIMMSrc::X, CUResSrc::ALU, 0, 0, 0, 0, 0);
+D cf_sub(1, CUALUSrc1::R, CUALUSrc2::R, CUALUCtrl::SUB, CUCMPCtrl::X, CUIMMSrc::X, CUResSrc::ALU, 0, 0, 0, 0, 0);
+D cf_int(0, CUALUSrc1::R, CUALUSrc2::I, CUALUCtrl::X, CUCMPCtrl::X, CUIMMSrc::I, CUResSrc::X, 0, 0, 0, 0, 1);
 #undef D
 
 CUFlags_Main GetCUFlags(Instr inst)
@@ -23,6 +24,13 @@ CUFlags_Main GetCUFlags(Instr inst)
 	switch (inst.op) {
 	case 0b1101111:
 		return cf_jal;
+	case 0b1100111:
+		switch (inst.funct3) {
+		case 0b000:
+			return cf_jalr;
+		default:
+			return cf_ill;
+		}
 	case 0b0000011: // lX
 		switch (inst.funct3) {
 		case 0b010:

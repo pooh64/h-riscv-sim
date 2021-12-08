@@ -47,7 +47,7 @@ struct PL_HU final : Module {
 		UNALIGNED_ADDR,
 		MMU_MISS,
 		INT,
-	} exc_type;
+	} exc_cause;
 	enum class ExcStage : i8 {
 		NO = -1,
 		FE = 0,
@@ -57,15 +57,13 @@ struct PL_HU final : Module {
 		WB,
 	} exc_stage = ExcStage::NO;
 	u32 exc_pc;
-	i8 flush_cnt = -1; // debugging purposes
 	inline void RaiseExcept(ExcStage stage, ExcType type, u32 pc)
 	{
 		if (stage <= exc_stage)
 			return;
 		exc_stage = stage;
-		exc_type = type;
+		exc_cause = type;
 		exc_pc = pc;
-		flush_cnt = static_cast<i8>(ExcStage::WB) - static_cast<i8>(stage) + 1;
 	}
 };
 
@@ -80,35 +78,8 @@ struct MMU {
 		assert(sz_ % sizeof(u32) == 0);
 	}
 
-	inline bool load(u32 a, u32 *d, PL_HU::ExcType &et)
-	{
-		u32 *addr = (u32 *)((u8 *)base + a);
-		if (a % 4) {
-			et = PL_HU::ExcType::UNALIGNED_ADDR;
-			return false;
-		}
-		if (!(addr < end)) {
-			et = PL_HU::ExcType::MMU_MISS;
-			return false;
-		}
-		*d = *addr;
-		return true;
-	}
-
-	inline bool store(u32 a, u32 d, PL_HU::ExcType &et)
-	{
-		u32 *addr = (u32 *)((u8 *)base + a);
-		if (a % 4) {
-			et = PL_HU::ExcType::UNALIGNED_ADDR;
-			return false;
-		}
-		if (!(addr < end)) {
-			et = PL_HU::ExcType::MMU_MISS;
-			return false;
-		}
-		*addr = d;
-		return true;
-	}
+	inline bool load(CPU &cpu, u32 a, u32 *d, PL_HU::ExcType &et);
+	inline bool store(CPU &cpu, u32 a, u32 d, PL_HU::ExcType &et);
 };
 
 struct PL_Fetch final : Module {
@@ -142,11 +113,12 @@ struct PL_Decode final : Module {
 struct PL_Execute final : Module {
 	CPU_MODULE;
 	struct State {
-		u8 reg_write;
-		u8 mem_write;
+		bool reg_write;
+		bool mem_write;
 		CUResSrc result_src;
-		u8 jump;
-		u8 branch;
+		bool jump;
+		bool jreg;
+		bool branch;
 		CUALUCtrl alu_ctrl;
 		CUCMPCtrl cmp_ctrl;
 		CUALUSrc1 alu_src1;
@@ -163,7 +135,7 @@ struct PL_Execute final : Module {
 		u8 rda;
 	};
 	TickReg<State> s;
-	u32 jrs1v;
+	u32 jbase;
 	bool pc_r{0};
 };
 
@@ -202,7 +174,9 @@ struct CPU final : Module {
 		de.s.r.inst.raw = 0x00000033; // do nothing
 	}
 	void execute();
+	u32 tvec = 0;
 	u32 time = 0;
+	bool shutdown = false;
 
 	PL_Fetch fe;
 	PL_Decode de;
@@ -225,24 +199,52 @@ inline void CPU::tick(CPU &cpu)
 	time++;
 }
 
+inline bool MMU::load(CPU &cpu, u32 a, u32 *d, PL_HU::ExcType &et)
+{
+	u32 *addr = (u32 *)((u8 *)base + a);
+	if (a % 4) {
+		et = PL_HU::ExcType::UNALIGNED_ADDR;
+		return false;
+	}
+	if (!(addr < end)) {
+		et = PL_HU::ExcType::MMU_MISS;
+		return false;
+	}
+	*d = *addr;
+	return true;
+}
+
+inline bool MMU::store(CPU &cpu, u32 a, u32 d, PL_HU::ExcType &et)
+{
+	u32 *addr = (u32 *)((u8 *)base + a);
+	if (a % 4) {
+		et = PL_HU::ExcType::UNALIGNED_ADDR;
+		return false;
+	}
+	if (a == 0)
+		cpu.shutdown = true;
+	if (!(addr < end)) {
+		et = PL_HU::ExcType::MMU_MISS;
+		return false;
+	}
+	*addr = d;
+	return true;
+}
+
 /**********************************************************/
 inline void PL_Fetch::init() {}
 inline void PL_Fetch::tick(CPU &cpu)
 {
 	PL_HU::ExcType et;
-	if (!cpu.mmu.load(cpu.fe.s.r.pc, &cpu.de.s.w.inst.raw, et)) {
+	if (!cpu.mmu.load(cpu, cpu.fe.s.r.pc, &cpu.de.s.w.inst.raw, et)) {
 		cpu.hu.RaiseExcept(PL_HU::ExcStage::FE, et, cpu.fe.s.r.pc);
 	}
 
 	u32 pc_next;
-	if (!cpu.ex.pc_r) {
+	if (!cpu.ex.pc_r)
 		pc_next = cpu.fe.s.r.pc + 4;
-	} else {
-		if (cpu.ex.s.r.jump)
-			pc_next = (cpu.ex.jrs1v + cpu.ex.s.r.imm_ext) & ~(u32)1;
-		else
-			pc_next = cpu.ex.s.r.pc + cpu.ex.s.r.imm_ext;
-	}
+	else
+		pc_next = cpu.ex.jbase + cpu.ex.s.r.imm_ext;
 
 	cpu.fe.s.w.pc = pc_next;
 
@@ -367,13 +369,14 @@ inline void PL_Decode::tick(CPU &cpu)
 	cpu.ex.s.w.result_src = cpu.de.s.r.v ? CUResSrc::ALU : cf.result_src;
 	cpu.ex.s.w.mem_write = cf.mem_write && !cpu.de.s.r.v;
 	cpu.ex.s.w.jump = cf.jump && !cpu.de.s.r.v;
+	cpu.ex.s.w.jreg = cf.jreg;
 	cpu.ex.s.w.branch = cf.branch && !cpu.de.s.r.v;
 	cpu.ex.s.w.intpt = cf.intpt && !cpu.de.s.r.v;
 	cpu.ex.s.w.alu_ctrl = cf.alu_control;
 	cpu.ex.s.w.cmp_ctrl = cf.cmp_control;
 	cpu.ex.s.w.alu_src1 = cf.alu_src1;
 	cpu.ex.s.w.alu_src2 = cf.alu_src2;
-	if (!cf.opcode_ok)
+	if (!cf.opcode_ok && !cpu.de.s.r.v)
 		cpu.hu.RaiseExcept(PL_HU::ExcStage::DE, PL_HU::ExcType::BAD_OPCODE, cpu.de.s.r.pc);
 
 	cpu.ex.s.w.imm_ext = CPUSignExtend(inst.raw, cf.imm_src);
@@ -457,7 +460,7 @@ inline void PL_Execute::tick(CPU &cpu)
 	};
 	u32 sv1 = fwd_select(cpu.hu.getRegFWD(cpu, cpu.ex.s.r.rs1a), cpu.ex.s.r.rs1v);
 	u32 sv2 = fwd_select(cpu.hu.getRegFWD(cpu, cpu.ex.s.r.rs2a), cpu.ex.s.r.rs2v);
-	jrs1v = sv1;
+	jbase = cpu.ex.s.r.jreg ? (sv1 & ~(u32)1) : cpu.ex.s.r.pc;
 	cpu.mem.s.w.mem_wdata = sv2;
 
 	if (cpu.ex.s.r.alu_src1 == CUALUSrc1::PC)
@@ -485,11 +488,11 @@ inline void PL_Memory::tick(CPU &cpu)
 	u32 mmu_rd;
 	PL_HU::ExcType et;
 	if (cpu.mem.s.r.result_src == CUResSrc::MEM) {
-		if (!cpu.mmu.load(cpu.mem.s.r.alu_res, &mmu_rd, et))
+		if (!cpu.mmu.load(cpu, cpu.mem.s.r.alu_res, &mmu_rd, et))
 			cpu.hu.RaiseExcept(PL_HU::ExcStage::MEM, et, cpu.mem.s.r.pc);
 	}
 	if (cpu.mem.s.r.mem_write) {
-		if (!cpu.mmu.store(cpu.mem.s.r.alu_res, cpu.mem.s.r.mem_wdata, et))
+		if (!cpu.mmu.store(cpu, cpu.mem.s.r.alu_res, cpu.mem.s.r.mem_wdata, et))
 			cpu.hu.RaiseExcept(PL_HU::ExcStage::MEM, et, cpu.mem.s.r.pc);
 	}
 
@@ -540,7 +543,6 @@ inline void PL_HU::tick(CPU &cpu)
 
 	if ((pc_flush || load_hazard) && exc_stage <= ExcStage::DE) {
 		exc_stage = ExcStage::NO;
-		flush_cnt = -1;
 	}
 
 	if (exc_stage >= ExcStage::MEM) {
@@ -559,7 +561,7 @@ inline void PL_HU::tick(CPU &cpu)
 		cpu.mem.s.tick(cpu);
 	}
 
-	if (load_hazard || pc_flush || exc_stage >= ExcStage::DE) {
+	if (exc_stage >= ExcStage::DE || load_hazard || pc_flush) {
 		cpu.ex.s.w.reg_write = 0;
 		cpu.ex.s.w.mem_write = 0;
 		cpu.ex.s.w.result_src = CUResSrc::ALU;
@@ -571,7 +573,7 @@ inline void PL_HU::tick(CPU &cpu)
 		cpu.ex.s.tick(cpu);
 	}
 
-	if (pc_flush || exc_stage >= ExcStage::FE) {
+	if (exc_stage >= ExcStage::FE || pc_flush) {
 		cpu.de.s.w.v = 1;
 		cpu.de.s.tick(cpu);
 	} else if (!load_hazard) {
@@ -579,15 +581,12 @@ inline void PL_HU::tick(CPU &cpu)
 	}
 
 	if (exc_stage > ExcStage::NO) {
-		cpu.fe.s.w.pc = 1024; // exception handler
+		cpu.fe.s.w.pc = cpu.tvec;
+		cpu.fe.s.tick(cpu);
 	} else if (!load_hazard) {
 		cpu.fe.s.tick(cpu);
 	}
-
-	/* debugging */
-	// exc_stage = ExcStage::NO; // enable later
-	if (exc_stage > ExcStage::NO)
-		flush_cnt--;
+	exc_stage = ExcStage::NO;
 }
 
 } // namespace cpu
