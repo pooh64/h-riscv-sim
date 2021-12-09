@@ -8,8 +8,19 @@ namespace cpu
 
 #define D constexpr CUFlags_Main
 D cf_ill{};
+D cf_auipc(1, CUALUSrc1::PC, CUALUSrc2::I, CUALUCtrl::ADD, CUCMPCtrl::X, CUIMMSrc::U, CUResSrc::ALU, 0, 0, 0, 0, 0);
 D cf_jal(1, CUALUSrc1::X, CUALUSrc2::X, CUALUCtrl::X, CUCMPCtrl::X, CUIMMSrc::J, CUResSrc::PC, 0, 0, 1, 0, 0);
 D cf_jalr(1, CUALUSrc1::X, CUALUSrc2::X, CUALUCtrl::X, CUCMPCtrl::X, CUIMMSrc::I, CUResSrc::PC, 0, 0, 1, 1, 0);
+#define B(name, cond)                                                                                                  \
+	constexpr CUFlags_Main name(0, CUALUSrc1::X, CUALUSrc2::X, CUALUCtrl::X, CUCMPCtrl::cond, CUIMMSrc::B,         \
+				    CUResSrc::X, 0, 1, 0, 0, 0)
+B(cf_beq, EQ);
+B(cf_bne, NE);
+B(cf_blt, LT);
+B(cf_bge, GE);
+B(cf_bltu, LTU);
+B(cf_bgeu, GEU);
+#undef B
 D cf_lw(1, CUALUSrc1::R, CUALUSrc2::I, CUALUCtrl::ADD, CUCMPCtrl::X, CUIMMSrc::I, CUResSrc::MEM, 0, 0, 0, 0, 0);
 D cf_sw(0, CUALUSrc1::R, CUALUSrc2::I, CUALUCtrl::ADD, CUCMPCtrl::X, CUIMMSrc::S, CUResSrc::X, 1, 0, 0, 0, 0);
 D cf_addi(1, CUALUSrc1::R, CUALUSrc2::I, CUALUCtrl::ADD, CUCMPCtrl::X, CUIMMSrc::I, CUResSrc::ALU, 0, 0, 0, 0, 0);
@@ -22,12 +33,31 @@ CUFlags_Main GetCUFlags(Instr inst)
 {
 	CUFlags_Main res;
 	switch (inst.op) {
+	case 0b0010111:
+		return cf_auipc;
 	case 0b1101111:
 		return cf_jal;
 	case 0b1100111:
 		switch (inst.funct3) {
 		case 0b000:
 			return cf_jalr;
+		default:
+			return cf_ill;
+		}
+	case 0b1100011:
+		switch (inst.funct3) {
+		case 0b000:
+			return cf_beq;
+		case 0b001:
+			return cf_bne;
+		case 0b100:
+			return cf_blt;
+		case 0b101:
+			return cf_bge;
+		case 0b110:
+			return cf_bltu;
+		case 0b111:
+			return cf_bgeu;
 		default:
 			return cf_ill;
 		}

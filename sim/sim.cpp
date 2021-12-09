@@ -120,12 +120,84 @@ void test_3()
 	assert(env.cpusim.de.regfile.gpr[10] == 0);
 }
 
+void test_4()
+{
+	/*
+	start:
+		li sp, 1024
+		jal ra, main
+		ebreak
+		nop
+	main:
+		addi    sp,sp,-32
+		sw      s0,28(sp)
+		addi    s0,sp,32
+		sw      zero,-20(s0)
+		sw      zero,-24(s0)
+		j       .L3
+	.L4:
+		lw      a5,-20(s0)
+		addi    a5,a5,2
+		sw      a5,-20(s0)
+		lw      a5,-24(s0)
+		addi    a5,a5,1
+		sw      a5,-24(s0)
+	.L3:
+		lw      a4,-24(s0)
+		li      a5,2
+		ble     a4,a5,.L4
+		lw      a5,-20(s0)
+		mv      a0,a5
+		lw      s0,28(sp)
+		addi    sp,sp,32
+		jr      ra
+	*/
+	u32 const code[] = {0x40000113U, 0x00c000efU, 0x00100073U, 0x00000013U, 0xfe010113U, 0x00812e23U,
+			    0x02010413U, 0xfe042623U, 0xfe042423U, 0x01c0006fU, 0xfec42783U, 0x00278793U,
+			    0xfef42623U, 0xfe842783U, 0x00178793U, 0xfef42423U, 0xfe842703U, 0x00200793U,
+			    0xfee7d0e3U, 0xfec42783U, 0x00078513U, 0x01c12403U, 0x02010113U, 0x00008067U};
+	CPUEnv env{};
+	memcpy(env.mem.get() + 1024, code, sizeof(code));
+
+	env.execute(1024);
+	assert(env.cpusim.hu.exc_pc == 1024 + 4 * 2);
+
+	assert(env.cpusim.de.regfile.gpr[1] == 1024 + 4 * 2);
+	assert(env.cpusim.de.regfile.gpr[2] == 1024);
+	assert(env.cpusim.de.regfile.gpr[10] == 6);
+}
+
+void test_5()
+{
+	/* multiplication via loop, recursive fact */
+	u32 const code[] = {0x40000113U, 0x0c4000efU, 0x00100073U, 0x00000013U, 0xfd010113U, 0x02812623U, 0x03010413U,
+			    0xfca42e23U, 0xfcb42c23U, 0xfe042623U, 0xfe042423U, 0x0200006fU, 0xfec42703U, 0xfd842783U,
+			    0x00f707b3U, 0xfef42623U, 0xfe842783U, 0x00178793U, 0xfef42423U, 0xfe842703U, 0xfdc42783U,
+			    0xfcf74ee3U, 0xfec42783U, 0x00078513U, 0x02c12403U, 0x03010113U, 0x00008067U, 0xfe010113U,
+			    0x00112e23U, 0x00812c23U, 0x02010413U, 0xfea42623U, 0xfec42783U, 0x02078663U, 0xfec42783U,
+			    0xfff78793U, 0x00078513U, 0xfd9ff0efU, 0x00050793U, 0x00078593U, 0xfec42503U, 0xf6dff0efU,
+			    0x00050793U, 0x0080006fU, 0x00100793U, 0x00078513U, 0x01c12083U, 0x01812403U, 0x02010113U,
+			    0x00008067U, 0xff010113U, 0x00112623U, 0x00812423U, 0x01010413U, 0x00500513U, 0xf91ff0efU,
+			    0x00050793U, 0x00078513U, 0x00c12083U, 0x00812403U, 0x01010113U, 0x00008067U};
+	CPUEnv env{};
+	memcpy(env.mem.get() + 1024, code, sizeof(code));
+
+	env.execute(1024);
+	assert(env.cpusim.hu.exc_pc == 1024 + 4 * 2);
+
+	assert(env.cpusim.de.regfile.gpr[1] == 1024 + 4 * 2);
+	assert(env.cpusim.de.regfile.gpr[2] == 1024);
+	assert(env.cpusim.de.regfile.gpr[10] == 120);
+}
+
 void test()
 {
 	test_0();
 	test_1();
 	test_2();
 	test_3();
+	test_4();
+	test_5();
 }
 
 int main()

@@ -36,6 +36,7 @@ enum class CUIMMSrc : u8 {
 	S,
 	B,
 	J,
+	U,
 };
 
 enum class CUResSrc : u8 {
@@ -87,7 +88,7 @@ struct CUFlags_Main {
 	CUALUSrc2 alu_src2 : 1;
 	CUALUCtrl alu_control : 4;
 	CUCMPCtrl cmp_control : 4;
-	CUIMMSrc imm_src : 2;
+	CUIMMSrc imm_src : 3;
 	CUResSrc result_src : 2;
 	bool mem_write : 1;
 	bool branch : 1;
@@ -95,20 +96,18 @@ struct CUFlags_Main {
 	bool jreg : 1;
 	bool intpt : 1;
 	bool opcode_ok : 1;
-	constexpr CUFlags_Main(bool reg_write_, CUALUSrc1 alu_src1_, CUALUSrc2 alu_src2_,
-			       CUALUCtrl alu_control_, CUCMPCtrl cmp_control_, CUIMMSrc imm_src_,
-			       CUResSrc result_src_, bool mem_write_, bool branch_, bool jump_, bool jreg_,
-			       bool intpt_)
-	    : reg_write(reg_write_), alu_src1(alu_src1_), alu_src2(alu_src2_),
-	      alu_control(alu_control_), cmp_control(cmp_control_), imm_src(imm_src_),
-	      result_src(result_src_), mem_write(mem_write_), branch(branch_), jump(jump_), jreg(jreg_),
-	      intpt(intpt_), opcode_ok(1)
+	constexpr CUFlags_Main(bool reg_write_, CUALUSrc1 alu_src1_, CUALUSrc2 alu_src2_, CUALUCtrl alu_control_,
+			       CUCMPCtrl cmp_control_, CUIMMSrc imm_src_, CUResSrc result_src_, bool mem_write_,
+			       bool branch_, bool jump_, bool jreg_, bool intpt_)
+	    : reg_write(reg_write_), alu_src1(alu_src1_), alu_src2(alu_src2_), alu_control(alu_control_),
+	      cmp_control(cmp_control_), imm_src(imm_src_), result_src(result_src_), mem_write(mem_write_),
+	      branch(branch_), jump(jump_), jreg(jreg_), intpt(intpt_), opcode_ok(1)
 	{
 	}
 	constexpr CUFlags_Main()
 	    : reg_write(0), alu_src1(CUALUSrc1::X), alu_src2(CUALUSrc2::X), alu_control(CUALUCtrl::X),
-	      cmp_control(CUCMPCtrl::X), imm_src(CUIMMSrc::X), result_src(CUResSrc::X),
-	      mem_write(0), branch(0), jump(0), jreg(0), intpt(0), opcode_ok(0){};
+	      cmp_control(CUCMPCtrl::X), imm_src(CUIMMSrc::X), result_src(CUResSrc::X), mem_write(0), branch(0),
+	      jump(0), jreg(0), intpt(0), opcode_ok(0){};
 } __attribute__((packed));
 
 CUFlags_Main GetCUFlags(Instr inst);

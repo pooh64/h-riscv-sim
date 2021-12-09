@@ -304,6 +304,15 @@ inline constexpr u32 CPUSignExtend(u32 raw_, CUIMMSrc imm_src)
 			u32 imm2 : 8;
 			u32 se : 13;
 		} __attribute__((packed)) dj;
+				struct {
+			u32 _pad0 : 12;
+			u32 imm0 : 19;
+			u32 sgn : 1;
+		} __attribute__((packed)) fu;
+		struct {
+			u32 imm0 : 20;
+			u32 se : 12;
+		} __attribute__((packed)) du;
 	} in{.raw = raw_}, out{.raw = 0};
 	u8 sgn = (in.raw >> 31) & 1;
 
@@ -334,6 +343,12 @@ inline constexpr u32 CPUSignExtend(u32 raw_, CUIMMSrc imm_src)
 		if (sgn)
 			out.dj.se--;
 		out.raw <<= 1; // jmp
+		break;
+	case CUIMMSrc::U:
+		out.du.imm0 = in.fu.imm0;
+		if (sgn)
+			out.dj.se--;
+		out.raw <<= 12; // auipc
 		break;
 	default:
 		assert(0);
