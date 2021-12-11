@@ -1,5 +1,7 @@
 #include "sim/cpu.h"
+#include "sim/elfload.h"
 
+#include <bit>
 #include <iostream>
 #include <memory>
 
@@ -11,26 +13,35 @@ void DumpExc(cpu::CPU &cpu)
 
 struct CPUEnv {
 	cpu::CPU cpusim{};
-	static constexpr u32 MEM_SZ = 4096;
-	std::unique_ptr<u8[]> mem{new u8[MEM_SZ]};
+	std::unique_ptr<u8[]> mem;
+	static constexpr u32 tvec_hanlder_sz = 16;
 
-	CPUEnv()
+	CPUEnv(u32 mem_sz = 4096, u32 tvec = 4096 - tvec_hanlder_sz) : mem{new u8[mem_sz]}
 	{
-		cpusim.mmu.setMem((u32 *)mem.get(), MEM_SZ);
+		cpusim.mmu.setMem((u32 *)mem.get(), mem_sz);
 		u32 mov00 = 0x00002023;
-		cpusim.tvec = 4080;
+		cpusim.tvec = tvec;
 		((u32 *)(mem.get() + cpusim.tvec))[0] = mov00;
 		((u32 *)(mem.get() + cpusim.tvec))[1] = mov00;
 		((u32 *)(mem.get() + cpusim.tvec))[2] = mov00;
 		((u32 *)(mem.get() + cpusim.tvec))[3] = mov00;
 	}
-
-	void execute(u32 pc)
-	{
-		cpusim.fe.s.r.pc = pc;
-		cpusim.execute();
-	}
+	void execute(u32 pc);
 };
+
+void CPUEnv::execute(u32 pc)
+{
+	cpusim.fe.s.r.pc = pc;
+	// cpusim.execute();
+	while (!cpusim.shutdown) {
+		if constexpr (false) {
+			cpusim.trace(std::cout);
+			std::cout << "\n";
+		}
+		cpusim.tick(cpusim);
+	}
+	std::cout << "cycles: " << cpusim.time << "\n";
+}
 
 void test_0()
 {
@@ -41,6 +52,7 @@ void test_0()
 	CPUEnv env{};
 	memcpy(env.mem.get() + 1024, code, sizeof(code));
 
+	std::cout << "**************** test_0\n";
 	env.execute(1024);
 	assert(env.cpusim.hu.exc_pc == 1024);
 }
@@ -61,6 +73,7 @@ void test_1()
 	*(u32 *)(&env.mem[32]) = 0x21323424;
 	*(u32 *)(&env.mem[36]) = 0xdeadbabe;
 
+	std::cout << "**************** test_1\n";
 	env.execute(1024);
 	assert(env.cpusim.hu.exc_pc == 1024 + 4 * 4);
 
@@ -81,6 +94,7 @@ void test_2()
 	CPUEnv env{};
 	memcpy(env.mem.get() + 1024, code, sizeof(code));
 
+	std::cout << "**************** test_2\n";
 	env.execute(1024);
 	assert(env.cpusim.hu.exc_pc == 1024 + 4 * 3);
 
@@ -112,6 +126,7 @@ void test_3()
 	CPUEnv env{};
 	memcpy(env.mem.get() + 1024, code, sizeof(code));
 
+	std::cout << "**************** test_3\n";
 	env.execute(1024);
 	assert(env.cpusim.hu.exc_pc == 1024 + 4 * 2);
 
@@ -159,6 +174,7 @@ void test_4()
 	CPUEnv env{};
 	memcpy(env.mem.get() + 1024, code, sizeof(code));
 
+	std::cout << "**************** test_4\n";
 	env.execute(1024);
 	assert(env.cpusim.hu.exc_pc == 1024 + 4 * 2);
 
@@ -182,6 +198,7 @@ void test_5()
 	CPUEnv env{};
 	memcpy(env.mem.get() + 1024, code, sizeof(code));
 
+	std::cout << "**************** test_5\n";
 	env.execute(1024);
 	assert(env.cpusim.hu.exc_pc == 1024 + 4 * 2);
 
@@ -200,8 +217,33 @@ void test()
 	test_5();
 }
 
-int main()
+void execute_elf(char const *path)
 {
-	test();
+	std::cout << "**************** execute elf\n";
+	elf_entry elf;
+	if (elf_mmap(path, &elf) < 0)
+		return;
+
+	constexpr u32 load_offs = 4096;
+
+	u32 mem_sz = std::__bit_ceil(load_offs + elf.sz + CPUEnv::tvec_hanlder_sz);
+	CPUEnv env(mem_sz, mem_sz - CPUEnv::tvec_hanlder_sz);
+	memcpy(env.mem.get() + load_offs, elf.ptr, elf.sz);
+
+	std::cout << "**************** start execution\n";
+	u32 entry_va = load_offs + elf.entry;
+	env.execute(entry_va);
+	assert(env.cpusim.hu.exc_pc == entry_va + 4 * 2);
+	assert(env.cpusim.hu.exc_cause == cpu::PL_HU::ExcType::INT);
+	std::cout << "Process returned: " << env.cpusim.de.regfile.gpr[10] << "\n";
+}
+
+int main(int argc, char **argv)
+{
+	if (argc == 1) {
+		test();
+	} else if (argc == 2) {
+		execute_elf(argv[1]);
+	}
 	return 0;
 }

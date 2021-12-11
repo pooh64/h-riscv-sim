@@ -97,6 +97,7 @@ struct PL_Decode final : Module {
 		u32 pc;
 		u32 pc_next;
 		u8 v;
+		bool _dbg_trace;
 	};
 	TickReg<State> s;
 	struct Regfile final : Module {
@@ -133,6 +134,7 @@ struct PL_Execute final : Module {
 		u8 rs1a;
 		u8 rs2a;
 		u8 rda;
+		bool _dbg_trace;
 	};
 	TickReg<State> s;
 	u32 jbase;
@@ -151,6 +153,7 @@ struct PL_Memory final : Module {
 		u32 pc;
 		u32 mem_wdata;
 		u32 alu_res;
+		bool _dbg_trace;
 	};
 	TickReg<State> s;
 };
@@ -161,6 +164,7 @@ struct PL_Wback final : Module {
 		u8 reg_write;
 		u8 reg_addr;
 		u32 reg_wdata;
+		bool _dbg_trace;
 	};
 	TickReg<State> s;
 };
@@ -177,6 +181,7 @@ struct CPU final : Module {
 	u32 tvec = 0;
 	u32 time = 0;
 	bool shutdown = false;
+	void trace(std::ostream &os);
 
 	PL_Fetch fe;
 	PL_Decode de;
@@ -254,7 +259,7 @@ inline void PL_Fetch::tick(CPU &cpu)
 }
 
 /**********************************************************/
-inline constexpr u32 CPUSignExtend(u32 raw_, CUIMMSrc imm_src)
+inline constexpr u32 CPUSignExtend(u32 raw_, CUIType imm_src)
 {
 	union imm_layout {
 		u32 raw;
@@ -317,18 +322,20 @@ inline constexpr u32 CPUSignExtend(u32 raw_, CUIMMSrc imm_src)
 	u8 sgn = (in.raw >> 31) & 1;
 
 	switch (imm_src) {
-	case CUIMMSrc::I:
+	case CUIType::R:
+		break;
+	case CUIType::I:
 		out.di.imm0 = in.fi.imm0;
 		if (sgn)
 			out.di.se--;
 		break;
-	case CUIMMSrc::S:
+	case CUIType::S:
 		out.ds.imm0 = in.fs.imm0;
 		out.ds.imm1 = in.fs.imm1;
 		if (sgn)
 			out.ds.se--;
 		break;
-	case CUIMMSrc::B:
+	case CUIType::B:
 		out.db.imm0 = in.fb.imm0;
 		out.db.imm1 = in.fb.imm1;
 		out.db.imm2 = in.fb.imm2;
@@ -336,7 +343,7 @@ inline constexpr u32 CPUSignExtend(u32 raw_, CUIMMSrc imm_src)
 			out.db.se--;
 		out.raw <<= 1; // branch
 		break;
-	case CUIMMSrc::J:
+	case CUIType::J:
 		out.dj.imm0 = in.fj.imm0;
 		out.dj.imm1 = in.fj.imm1;
 		out.dj.imm2 = in.fj.imm2;
@@ -344,7 +351,7 @@ inline constexpr u32 CPUSignExtend(u32 raw_, CUIMMSrc imm_src)
 			out.dj.se--;
 		out.raw <<= 1; // jmp
 		break;
-	case CUIMMSrc::U:
+	case CUIType::U:
 		out.du.imm0 = in.fu.imm0;
 		if (sgn)
 			out.dj.se--;
@@ -394,7 +401,7 @@ inline void PL_Decode::tick(CPU &cpu)
 	if (!cf.opcode_ok && !cpu.de.s.r.v)
 		cpu.hu.RaiseExcept(PL_HU::ExcStage::DE, PL_HU::ExcType::BAD_OPCODE, cpu.de.s.r.pc);
 
-	cpu.ex.s.w.imm_ext = CPUSignExtend(inst.raw, cf.imm_src);
+	cpu.ex.s.w.imm_ext = CPUSignExtend(inst.raw, cf.itype);
 	cpu.ex.s.w.pc = cpu.de.s.r.pc;
 	cpu.ex.s.w.pc_next = cpu.de.s.r.pc_next;
 	cpu.ex.s.w.rs1a = inst.rs1;
@@ -562,8 +569,10 @@ inline void PL_HU::tick(CPU &cpu)
 
 	if (exc_stage >= ExcStage::MEM) {
 		cpu.wb.s.w.reg_write = 0;
+		cpu.wb.s.w._dbg_trace = 0;
 		cpu.wb.s.tick(cpu);
 	} else if (!false) {
+		cpu.wb.s.w._dbg_trace = cpu.mem.s.r._dbg_trace;
 		cpu.wb.s.tick(cpu);
 	}
 
@@ -571,8 +580,10 @@ inline void PL_HU::tick(CPU &cpu)
 		cpu.mem.s.w.reg_write = 0;
 		cpu.mem.s.w.mem_write = 0;
 		cpu.mem.s.w.result_src = CUResSrc::ALU;
+		cpu.mem.s.w._dbg_trace = 0;
 		cpu.mem.s.tick(cpu);
 	} else if (!false) {
+		cpu.mem.s.w._dbg_trace = cpu.ex.s.r._dbg_trace;
 		cpu.mem.s.tick(cpu);
 	}
 
@@ -583,15 +594,19 @@ inline void PL_HU::tick(CPU &cpu)
 		cpu.ex.s.w.branch = 0;
 		cpu.ex.s.w.jump = 0;
 		cpu.ex.s.w.intpt = 0;
+		cpu.ex.s.w._dbg_trace = 0;
 		cpu.ex.s.tick(cpu);
 	} else if (!false) {
+		cpu.ex.s.w._dbg_trace = cpu.de.s.r._dbg_trace;
 		cpu.ex.s.tick(cpu);
 	}
 
 	if (exc_stage >= ExcStage::FE || pc_flush) {
 		cpu.de.s.w.v = 1;
+		cpu.de.s.w._dbg_trace = 0;
 		cpu.de.s.tick(cpu);
 	} else if (!load_hazard) {
+		cpu.de.s.w._dbg_trace = 1;
 		cpu.de.s.tick(cpu);
 	}
 
