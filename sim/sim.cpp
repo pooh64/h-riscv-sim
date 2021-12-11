@@ -233,6 +233,8 @@ void execute_elf(char const *path)
 	std::cout << "**************** start execution\n";
 	u32 entry_va = load_offs + elf.entry;
 	env.execute(entry_va);
+	std::cout << "epc: " << env.cpusim.hu.exc_pc << "\n";
+	std::cout << "ecause: " << (u32) env.cpusim.hu.exc_cause << "\n";
 	assert(env.cpusim.hu.exc_pc == entry_va + 4 * 2);
 	assert(env.cpusim.hu.exc_cause == cpu::PL_HU::ExcType::INT);
 	std::cout << "Process returned: " << env.cpusim.de.regfile.gpr[10] << "\n";

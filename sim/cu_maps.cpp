@@ -24,14 +24,17 @@ B(cf_bgeu, GEU);
 D cf_lw(CUIType::I, 1, CUALUSrc1::R, CUALUSrc2::I, CUALUCtrl::ADD, CUCMPCtrl::X, CUResSrc::MEM, 0, 0, 0, 0, 0);
 D cf_sw(CUIType::S, 0, CUALUSrc1::R, CUALUSrc2::I, CUALUCtrl::ADD, CUCMPCtrl::X, CUResSrc::X, 1, 0, 0, 0, 0);
 D cf_addi(CUIType::I, 1, CUALUSrc1::R, CUALUSrc2::I, CUALUCtrl::ADD, CUCMPCtrl::X, CUResSrc::ALU, 0, 0, 0, 0, 0);
+D cf_andi(CUIType::I, 1, CUALUSrc1::R, CUALUSrc2::I, CUALUCtrl::AND, CUCMPCtrl::X, CUResSrc::ALU, 0, 0, 0, 0, 0);
 D cf_add(CUIType::R, 1, CUALUSrc1::R, CUALUSrc2::R, CUALUCtrl::ADD, CUCMPCtrl::X, CUResSrc::ALU, 0, 0, 0, 0, 0);
 D cf_sub(CUIType::R, 1, CUALUSrc1::R, CUALUSrc2::R, CUALUCtrl::SUB, CUCMPCtrl::X, CUResSrc::ALU, 0, 0, 0, 0, 0);
-D cf_ecall(CUIType::I, 0, CUALUSrc1::R, CUALUSrc2::I, CUALUCtrl::X, CUCMPCtrl::X, CUResSrc::X, 0, 0, 0, 0, 1);
+D cf_ebreak(CUIType::I, 0, CUALUSrc1::R, CUALUSrc2::I, CUALUCtrl::X, CUCMPCtrl::X, CUResSrc::X, 0, 0, 0, 0, 1);
 #undef D
 
 #define CPU_DECODE_SWITCH                                                                                              \
 	CUFlags_Main res;                                                                                              \
 	switch (inst.op) {                                                                                             \
+	case 0b0110111:                                                                                                \
+		assert(!"lui");                                                                                        \
 	case 0b0010111:                                                                                                \
 		return OP(auipc);                                                                                      \
 	case 0b1101111:                                                                                                \
@@ -62,26 +65,27 @@ D cf_ecall(CUIType::I, 0, CUALUSrc1::R, CUALUSrc2::I, CUALUCtrl::X, CUCMPCtrl::X
 		}                                                                                                      \
 	case 0b0000011: /* lX */                                                                                       \
 		switch (inst.funct3) {                                                                                 \
+		case 0b000:                                                                                            \
+			assert(!"lb");                                                                                 \
+		case 0b001:                                                                                            \
+			assert(!"lh");                                                                                 \
 		case 0b010:                                                                                            \
 			return OP(lw);                                                                                 \
+		case 0b100:                                                                                            \
+			assert(!"lbu");                                                                                \
+		case 0b101:                                                                                            \
+			assert(!"lhu");                                                                                \
 		default:                                                                                               \
 			return OP(ill);                                                                                \
 		}                                                                                                      \
 	case 0b0100011: /* sX */                                                                                       \
 		switch (inst.funct3) {                                                                                 \
+		case 0b000:                                                                                            \
+			assert(!"sb");                                                                                 \
+		case 0b001:                                                                                            \
+			assert(!"sh");                                                                                 \
 		case 0b010:                                                                                            \
 			return OP(sw);                                                                                 \
-		default:                                                                                               \
-			return OP(ill);                                                                                \
-		}                                                                                                      \
-	case 0b1110011:                                                                                                \
-		return OP(ecall);                                                                                      \
-	case 0b0110011: /* r-type arithm */                                                                            \
-		switch (inst.funct3) {                                                                                 \
-		case 0b000:                                                                                            \
-			if (inst.funct7 >> 5)                                                                          \
-				return OP(sub);                                                                        \
-			return OP(add);                                                                                \
 		default:                                                                                               \
 			return OP(ill);                                                                                \
 		}                                                                                                      \
@@ -89,13 +93,62 @@ D cf_ecall(CUIType::I, 0, CUALUSrc1::R, CUALUSrc2::I, CUALUCtrl::X, CUCMPCtrl::X
 		switch (inst.funct3) {                                                                                 \
 		case 0b000:                                                                                            \
 			return OP(addi);                                                                               \
+		case 0b010:                                                                                            \
+			assert(!"slti");                                                                               \
+		case 0b011:                                                                                            \
+			assert(!"sltiu");                                                                              \
+		case 0b100:                                                                                            \
+			assert(!"xori");                                                                               \
+		case 0b110:                                                                                            \
+			assert(!"ori");                                                                                \
+		case 0b111:                                                                                            \
+			return OP(andi);                                                                               \
+		case 0b001:                                                                                            \
+			assert(!"slli");                                                                               \
+		case 0b101:                                                                                            \
+			if (inst.funct7 >> 5)                                                                          \
+				assert(!"srai");                                                                       \
+			assert(!"srli");                                                                               \
 		default:                                                                                               \
 			return OP(ill);                                                                                \
 		}                                                                                                      \
+	case 0b0110011: /* r-type arithm */                                                                            \
+		switch (inst.funct3) {                                                                                 \
+		case 0b000:                                                                                            \
+			if (inst.funct7 >> 5)                                                                          \
+				return OP(sub);                                                                        \
+			return OP(add);                                                                                \
+		case 0b001:                                                                                            \
+			assert(!"sll");                                                                                \
+		case 0b010:                                                                                            \
+			assert(!"slt");                                                                                \
+		case 0b011:                                                                                            \
+			assert(!"sltu");                                                                               \
+		case 0b100:                                                                                            \
+			assert(!"xor");                                                                                \
+		case 0b101:                                                                                            \
+			if (inst.funct7 >> 5)                                                                          \
+				assert("!sra");                                                                        \
+			assert(!"srl");                                                                                \
+		case 0b110:                                                                                            \
+			assert(!"or");                                                                                 \
+		case 0b111:                                                                                            \
+			assert(!"and");                                                                                \
+		default:                                                                                               \
+			return OP(ill);                                                                                \
+		}                                                                                                      \
+	case 0b0001111:                                                                                                \
+		assert(!"fence");                                                                                      \
+	case 0b1110011:                                                                                                \
+		switch (inst.funct3) {                                                                                 \
+		case 0b000:                                                                                            \
+			return OP(ebreak);                                                                             \
+		default:                                                                                               \
+			assert(!"csr*");                                                                               \
+		}                                                                                                      \
 	default:                                                                                                       \
 		return OP(ill);                                                                                        \
-	}                                                                                                              \
-	return OP(ill);
+	}
 
 CUFlags_Main GetCUFlags(Instr inst)
 {
