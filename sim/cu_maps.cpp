@@ -25,6 +25,8 @@ D cf_lw(CUIType::I, 1, CUALUSrc1::R, CUALUSrc2::I, CUALUCtrl::ADD, CUCMPCtrl::X,
 D cf_sw(CUIType::S, 0, CUALUSrc1::R, CUALUSrc2::I, CUALUCtrl::ADD, CUCMPCtrl::X, CUResSrc::X, 1, 0, 0, 0, 0);
 D cf_addi(CUIType::I, 1, CUALUSrc1::R, CUALUSrc2::I, CUALUCtrl::ADD, CUCMPCtrl::X, CUResSrc::ALU, 0, 0, 0, 0, 0);
 D cf_andi(CUIType::I, 1, CUALUSrc1::R, CUALUSrc2::I, CUALUCtrl::AND, CUCMPCtrl::X, CUResSrc::ALU, 0, 0, 0, 0, 0);
+D cf_slli(CUIType::I, 1, CUALUSrc1::R, CUALUSrc2::I, CUALUCtrl::SLL, CUCMPCtrl::X, CUResSrc::ALU, 0, 0, 0, 0, 0);
+D cf_srli(CUIType::I, 1, CUALUSrc1::R, CUALUSrc2::I, CUALUCtrl::SRL, CUCMPCtrl::X, CUResSrc::ALU, 0, 0, 0, 0, 0);
 D cf_add(CUIType::R, 1, CUALUSrc1::R, CUALUSrc2::R, CUALUCtrl::ADD, CUCMPCtrl::X, CUResSrc::ALU, 0, 0, 0, 0, 0);
 D cf_sub(CUIType::R, 1, CUALUSrc1::R, CUALUSrc2::R, CUALUCtrl::SUB, CUCMPCtrl::X, CUResSrc::ALU, 0, 0, 0, 0, 0);
 D cf_ebreak(CUIType::I, 0, CUALUSrc1::R, CUALUSrc2::I, CUALUCtrl::X, CUCMPCtrl::X, CUResSrc::X, 0, 0, 0, 0, 1);
@@ -104,11 +106,11 @@ D cf_ebreak(CUIType::I, 0, CUALUSrc1::R, CUALUSrc2::I, CUALUCtrl::X, CUCMPCtrl::
 		case 0b111:                                                                                            \
 			return OP(andi);                                                                               \
 		case 0b001:                                                                                            \
-			assert(!"slli");                                                                               \
+			return OP(slli);                                                                               \
 		case 0b101:                                                                                            \
 			if (inst.funct7 >> 5)                                                                          \
 				assert(!"srai");                                                                       \
-			assert(!"srli");                                                                               \
+			return OP(srli);                                                                               \
 		default:                                                                                               \
 			return OP(ill);                                                                                \
 		}                                                                                                      \

@@ -217,7 +217,8 @@ void test()
 	test_5();
 }
 
-void execute_elf(char const *path)
+/* recommended: -ffreestanding -march=rv32i -O2 -fpic -fpie -nostartfiles -nolibc -static */
+void execute_elf(char const *path, char const **args, int nargs)
 {
 	std::cout << "**************** execute elf\n";
 	elf_entry elf;
@@ -230,22 +231,25 @@ void execute_elf(char const *path)
 	CPUEnv env(mem_sz, mem_sz - CPUEnv::tvec_hanlder_sz);
 	memcpy(env.mem.get() + load_offs, elf.ptr, elf.sz);
 
+	for (int i = 0; i < nargs && i < 8; i++)
+		env.cpusim.de.regfile.gpr[10 + i] = atoll(args[i]);
 	std::cout << "**************** start execution\n";
+
 	u32 entry_va = load_offs + elf.entry;
 	env.execute(entry_va);
 	std::cout << "epc: " << env.cpusim.hu.exc_pc << "\n";
-	std::cout << "ecause: " << (u32) env.cpusim.hu.exc_cause << "\n";
+	std::cout << "ecause: " << (u32)env.cpusim.hu.exc_cause << "\n";
 	assert(env.cpusim.hu.exc_pc == entry_va + 4 * 2);
 	assert(env.cpusim.hu.exc_cause == cpu::PL_HU::ExcType::INT);
 	std::cout << "Process returned: " << env.cpusim.de.regfile.gpr[10] << "\n";
 }
 
-int main(int argc, char **argv)
+int main(int argc, char const **argv)
 {
 	if (argc == 1) {
 		test();
-	} else if (argc == 2) {
-		execute_elf(argv[1]);
+	} else if (argc >= 2) {
+		execute_elf(argv[1], argv + 2, argc - 2);
 	}
 	return 0;
 }

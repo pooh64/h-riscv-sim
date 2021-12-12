@@ -420,7 +420,7 @@ inline constexpr u32 ALUOperator(CUALUCtrl alu_ctrl, u32 a, u32 b)
 	case CUALUCtrl::SUB:
 		return a - b;
 	case CUALUCtrl::SLL:
-		return a << (b & 32);
+		return a << (b & 31);
 	case CUALUCtrl::SLT:
 		return !!((i32)a < (i32)b);
 	case CUALUCtrl::SLTU:
@@ -428,9 +428,9 @@ inline constexpr u32 ALUOperator(CUALUCtrl alu_ctrl, u32 a, u32 b)
 	case CUALUCtrl::XOR:
 		return a ^ b;
 	case CUALUCtrl::SRL:
-		return a >> (b & 32);
+		return a >> (b & 31);
 	case CUALUCtrl::SRA:
-		return (i32)a >> (b & 32);
+		return (i32)a >> (b & 31);
 	case CUALUCtrl::OR:
 		return a | b;
 	case CUALUCtrl::AND:
@@ -507,7 +507,7 @@ inline void PL_Execute::tick(CPU &cpu)
 inline void PL_Memory::init() {}
 inline void PL_Memory::tick(CPU &cpu)
 {
-	u32 mmu_rd;
+	u32 mmu_rd = 0;
 	PL_HU::ExcType et;
 	if (cpu.mem.s.r.result_src == CUResSrc::MEM) {
 		if (!cpu.mmu.load(cpu, cpu.mem.s.r.alu_res, &mmu_rd, et))
