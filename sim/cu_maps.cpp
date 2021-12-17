@@ -6,37 +6,135 @@
 namespace cpu
 {
 
-#define D constexpr CUFlags_Main
-D cf_ill{};
-D cf_auipc(CUIType::U, 1, CUALUSrc1::PC, CUALUSrc2::I, CUALUCtrl::ADD, CUCMPCtrl::X, CUResSrc::ALU, 0, 0, 0, 0, 0);
-D cf_jal(CUIType::J, 1, CUALUSrc1::X, CUALUSrc2::X, CUALUCtrl::X, CUCMPCtrl::X, CUResSrc::PC, 0, 0, 1, 0, 0);
-D cf_jalr(CUIType::I, 1, CUALUSrc1::X, CUALUSrc2::X, CUALUCtrl::X, CUCMPCtrl::X, CUResSrc::PC, 0, 0, 1, 1, 0);
-#define B(name, cond)                                                                                                  \
-	constexpr CUFlags_Main name(CUIType::B, 0, CUALUSrc1::X, CUALUSrc2::X, CUALUCtrl::X, CUCMPCtrl::cond,          \
-				    CUResSrc::X, 0, 1, 0, 0, 0)
-B(cf_beq, EQ);
-B(cf_bne, NE);
-B(cf_blt, LT);
-B(cf_bge, GE);
-B(cf_bltu, LTU);
-B(cf_bgeu, GEU);
-#undef B
-D cf_lw(CUIType::I, 1, CUALUSrc1::R, CUALUSrc2::I, CUALUCtrl::ADD, CUCMPCtrl::X, CUResSrc::MEM, 0, 0, 0, 0, 0);
-D cf_sw(CUIType::S, 0, CUALUSrc1::R, CUALUSrc2::I, CUALUCtrl::ADD, CUCMPCtrl::X, CUResSrc::X, 1, 0, 0, 0, 0);
-D cf_addi(CUIType::I, 1, CUALUSrc1::R, CUALUSrc2::I, CUALUCtrl::ADD, CUCMPCtrl::X, CUResSrc::ALU, 0, 0, 0, 0, 0);
-D cf_andi(CUIType::I, 1, CUALUSrc1::R, CUALUSrc2::I, CUALUCtrl::AND, CUCMPCtrl::X, CUResSrc::ALU, 0, 0, 0, 0, 0);
-D cf_slli(CUIType::I, 1, CUALUSrc1::R, CUALUSrc2::I, CUALUCtrl::SLL, CUCMPCtrl::X, CUResSrc::ALU, 0, 0, 0, 0, 0);
-D cf_srli(CUIType::I, 1, CUALUSrc1::R, CUALUSrc2::I, CUALUCtrl::SRL, CUCMPCtrl::X, CUResSrc::ALU, 0, 0, 0, 0, 0);
-D cf_add(CUIType::R, 1, CUALUSrc1::R, CUALUSrc2::R, CUALUCtrl::ADD, CUCMPCtrl::X, CUResSrc::ALU, 0, 0, 0, 0, 0);
-D cf_sub(CUIType::R, 1, CUALUSrc1::R, CUALUSrc2::R, CUALUCtrl::SUB, CUCMPCtrl::X, CUResSrc::ALU, 0, 0, 0, 0, 0);
-D cf_ebreak(CUIType::I, 0, CUALUSrc1::R, CUALUSrc2::I, CUALUCtrl::X, CUCMPCtrl::X, CUResSrc::X, 0, 0, 0, 0, 1);
-#undef D
+template <CUIType itype, CUALUCtrl alu_ctrl, CUALUSrc1 src1, CUALUSrc2 src2>
+static constexpr CUFlags_Main BuildALUInst()
+{
+	CUFlags_Main cf;
+	cf.itype = itype;
+	cf.reg_write = true;
+	cf.alu_src1 = src1;
+	cf.alu_src2 = src2;
+	cf.alu_control = alu_ctrl;
+	cf.result_src = CUResSrc::ALU;
+	cf.opcode_ok = true;
+	return cf;
+}
+
+template <CUIType itype, CUALUCtrl alu_ctrl>
+static constexpr CUFlags_Main BuildArithm()
+{
+	static_assert(itype == CUIType::R || itype == CUIType::I);
+	if constexpr (itype == CUIType::R)
+		return BuildALUInst<itype, alu_ctrl, CUALUSrc1::R, CUALUSrc2::R>();
+	return BuildALUInst<itype, alu_ctrl, CUALUSrc1::R, CUALUSrc2::I>();
+}
+
+template <CUIType itype, bool jreg>
+static constexpr CUFlags_Main BuildJump()
+{
+	CUFlags_Main cf;
+	cf.reg_write = true;
+	cf.itype = itype;
+	cf.result_src = CUResSrc::PC;
+	cf.jump = true;
+	cf.jreg = jreg;
+	cf.opcode_ok = true;
+	return cf;
+}
+
+template <CUCMPCtrl cmp_ctrl>
+static constexpr CUFlags_Main BuildBranch()
+{
+	CUFlags_Main cf;
+	cf.itype = CUIType::B;
+	cf.cmp_control = cmp_ctrl;
+	cf.branch = true;
+	cf.opcode_ok = true;
+	return cf;
+}
+
+template <CUMemOp mem_op, bool sgne>
+static constexpr CUFlags_Main BuildLoad()
+{
+	CUFlags_Main cf;
+	cf.itype = CUIType::I;
+	cf.reg_write = true;
+	cf.alu_src1 = CUALUSrc1::R;
+	cf.alu_src2 = CUALUSrc2::I;
+	cf.alu_control = CUALUCtrl::ADD;
+	cf.result_src = CUResSrc::MEM;
+	cf.mem_op = mem_op;
+	cf.mem_sgne = sgne;
+	cf.opcode_ok = true;
+	return cf;
+}
+
+static constexpr CUFlags_Main BuildStore()
+{
+	CUFlags_Main cf;
+	cf.itype = CUIType::S;
+	cf.alu_src1 = CUALUSrc1::R;
+	cf.alu_src2 = CUALUSrc2::I;
+	cf.alu_control = CUALUCtrl::ADD;
+	cf.mem_write = true;
+	cf.mem_op = CUMemOp::W;
+	cf.mem_sgne = 0;
+	cf.opcode_ok = true;
+	return cf;
+}
+
+static constexpr CUFlags_Main BuildEcall()
+{
+	CUFlags_Main cf;
+	cf.itype = CUIType::I;
+	cf.intpt = true;
+	cf.opcode_ok = true;
+	return cf;
+}
+
+auto constexpr cf_ill = CUFlags_Main();
+
+auto constexpr cf_lui = BuildALUInst<CUIType::U, CUALUCtrl::ARG2, CUALUSrc1::X, CUALUSrc2::I>();
+auto constexpr cf_auipc = BuildALUInst<CUIType::U, CUALUCtrl::ADD, CUALUSrc1::PC, CUALUSrc2::I>();
+auto constexpr cf_jal = BuildJump<CUIType::J, false>();
+auto constexpr cf_jalr = BuildJump<CUIType::I, true>();
+
+auto constexpr cf_beq = BuildBranch<CUCMPCtrl::EQ>();
+auto constexpr cf_bne = BuildBranch<CUCMPCtrl::NE>();
+auto constexpr cf_blt = BuildBranch<CUCMPCtrl::LT>();
+auto constexpr cf_bge = BuildBranch<CUCMPCtrl::GE>();
+auto constexpr cf_bltu = BuildBranch<CUCMPCtrl::LTU>();
+auto constexpr cf_bgeu = BuildBranch<CUCMPCtrl::GEU>();
+
+auto constexpr cf_lw = BuildLoad<CUMemOp::W, false>();
+auto constexpr cf_lbu = BuildLoad<CUMemOp::B, false>();
+auto constexpr cf_sw = BuildStore();
+
+auto constexpr cf_addi = BuildArithm<CUIType::I, CUALUCtrl::ADD>();
+auto constexpr cf_sltiu = BuildArithm<CUIType::I, CUALUCtrl::SLTU>();
+auto constexpr cf_xori = BuildArithm<CUIType::I, CUALUCtrl::XOR>();
+auto constexpr cf_ori = BuildArithm<CUIType::I, CUALUCtrl::OR>();
+auto constexpr cf_andi = BuildArithm<CUIType::I, CUALUCtrl::AND>();
+auto constexpr cf_slli = BuildArithm<CUIType::I, CUALUCtrl::SLL>();
+auto constexpr cf_srai = BuildArithm<CUIType::I, CUALUCtrl::SRA>();
+auto constexpr cf_srli = BuildArithm<CUIType::I, CUALUCtrl::SRL>();
+
+auto constexpr cf_add = BuildArithm<CUIType::R, CUALUCtrl::ADD>();
+auto constexpr cf_sub = BuildArithm<CUIType::R, CUALUCtrl::SUB>();
+auto constexpr cf_sll = BuildArithm<CUIType::R, CUALUCtrl::SLL>();
+auto constexpr cf_sltu = BuildArithm<CUIType::R, CUALUCtrl::SLTU>();
+auto constexpr cf_xor = BuildArithm<CUIType::R, CUALUCtrl::XOR>();
+auto constexpr cf_srl = BuildArithm<CUIType::R, CUALUCtrl::SRL>();
+auto constexpr cf_or = BuildArithm<CUIType::R, CUALUCtrl::OR>();
+auto constexpr cf_and = BuildArithm<CUIType::R, CUALUCtrl::AND>();
+
+auto constexpr cf_ebreak = BuildEcall();
 
 #define CPU_DECODE_SWITCH                                                                                              \
 	CUFlags_Main res;                                                                                              \
 	switch (inst.op) {                                                                                             \
 	case 0b0110111:                                                                                                \
-		assert(!"lui");                                                                                        \
+		return OP(lui);                                                                                        \
 	case 0b0010111:                                                                                                \
 		return OP(auipc);                                                                                      \
 	case 0b1101111:                                                                                                \
@@ -74,7 +172,7 @@ D cf_ebreak(CUIType::I, 0, CUALUSrc1::R, CUALUSrc2::I, CUALUCtrl::X, CUCMPCtrl::
 		case 0b010:                                                                                            \
 			return OP(lw);                                                                                 \
 		case 0b100:                                                                                            \
-			assert(!"lbu");                                                                                \
+			return OP(lbu);                                                                                \
 		case 0b101:                                                                                            \
 			assert(!"lhu");                                                                                \
 		default:                                                                                               \
@@ -98,18 +196,18 @@ D cf_ebreak(CUIType::I, 0, CUALUSrc1::R, CUALUSrc2::I, CUALUCtrl::X, CUCMPCtrl::
 		case 0b010:                                                                                            \
 			assert(!"slti");                                                                               \
 		case 0b011:                                                                                            \
-			assert(!"sltiu");                                                                              \
+			return OP(sltiu);                                                                              \
 		case 0b100:                                                                                            \
-			assert(!"xori");                                                                               \
+			return OP(xori);                                                                               \
 		case 0b110:                                                                                            \
-			assert(!"ori");                                                                                \
+			return OP(ori);                                                                                \
 		case 0b111:                                                                                            \
 			return OP(andi);                                                                               \
 		case 0b001:                                                                                            \
 			return OP(slli);                                                                               \
 		case 0b101:                                                                                            \
 			if (inst.funct7 >> 5)                                                                          \
-				assert(!"srai");                                                                       \
+				return OP(srai);                                                                       \
 			return OP(srli);                                                                               \
 		default:                                                                                               \
 			return OP(ill);                                                                                \
@@ -121,21 +219,21 @@ D cf_ebreak(CUIType::I, 0, CUALUSrc1::R, CUALUSrc2::I, CUALUCtrl::X, CUCMPCtrl::
 				return OP(sub);                                                                        \
 			return OP(add);                                                                                \
 		case 0b001:                                                                                            \
-			assert(!"sll");                                                                                \
+			return OP(sll);                                                                                \
 		case 0b010:                                                                                            \
 			assert(!"slt");                                                                                \
 		case 0b011:                                                                                            \
-			assert(!"sltu");                                                                               \
+			return OP(sltu);                                                                               \
 		case 0b100:                                                                                            \
-			assert(!"xor");                                                                                \
+			return OP(xor);                                                                                \
 		case 0b101:                                                                                            \
 			if (inst.funct7 >> 5)                                                                          \
 				assert("!sra");                                                                        \
-			assert(!"srl");                                                                                \
+			return OP(srl);                                                                                \
 		case 0b110:                                                                                            \
-			assert(!"or");                                                                                 \
+			return OP(or);                                                                                 \
 		case 0b111:                                                                                            \
-			assert(!"and");                                                                                \
+			return OP(and);                                                                                \
 		default:                                                                                               \
 			return OP(ill);                                                                                \
 		}                                                                                                      \
@@ -174,7 +272,7 @@ operator<<(std::ostream &os, Instr inst)
 #if 0
 const MapTab<CUFlags_Main, 128> cu_flags_map{
     {0b0000011, CUFlags_Main(1, CUResSrc::MEM, CUIMMSrc::I, 1, 0, 0, 0, 0b00, 0)}, // lw
-    {0b1110011, CUFlags_Main(1, CUResSrc::ALU, CUIMMSrc::I, 0, 0, 0, 0, 0b00, 1)}, // irq
+    {0b1110011, CUFlags_Main(1, CUResSrc::ALU, CUIMMSrc::I, 0, 0, 0, 0, 0b00, 1)}, // int
     {0b0110011, CUFlags_Main(1, CUResSrc::ALU, CUIMMSrc::I, 0, 0, 0, 0, 0b10, 0)}, // r-type
 };
 const MapTab<CUALUControl, 128> cu_alu_map{};

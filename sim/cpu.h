@@ -96,7 +96,7 @@ struct PL_Decode final : Module {
 		Instr inst;
 		u32 pc;
 		u32 pc_next;
-		u8 v;
+		bool v;
 		bool _dbg_trace;
 	};
 	TickReg<State> s;
@@ -116,15 +116,17 @@ struct PL_Execute final : Module {
 	struct State {
 		bool reg_write;
 		bool mem_write;
+		CUMemOp mem_op;
+		bool mem_sgne;
 		CUResSrc result_src;
 		bool jump;
 		bool jreg;
 		bool branch;
+		bool intpt;
 		CUALUCtrl alu_ctrl;
 		CUCMPCtrl cmp_ctrl;
 		CUALUSrc1 alu_src1;
 		CUALUSrc2 alu_src2;
-		bool intpt;
 		//
 		u32 pc;
 		u32 pc_next;
@@ -144,9 +146,11 @@ struct PL_Execute final : Module {
 struct PL_Memory final : Module {
 	CPU_MODULE;
 	struct State {
-		u8 reg_write;
-		u8 mem_write;
+		bool reg_write;
+		bool mem_write;
 		CUResSrc result_src;
+		CUMemOp mem_op;
+		bool mem_sgne;
 		//
 		u8 reg_addr;
 		u32 pc_next;
@@ -156,12 +160,18 @@ struct PL_Memory final : Module {
 		bool _dbg_trace;
 	};
 	TickReg<State> s;
+
+	struct UOp {
+		u32 a;
+		u32 d;
+		bool active{false};
+	} delayed_write;
 };
 
 struct PL_Wback final : Module {
 	CPU_MODULE;
 	struct State {
-		u8 reg_write;
+		bool reg_write;
 		u8 reg_addr;
 		u32 reg_wdata;
 		bool _dbg_trace;
@@ -309,7 +319,7 @@ inline constexpr u32 CPUSignExtend(u32 raw_, CUIType imm_src)
 			u32 imm2 : 8;
 			u32 se : 13;
 		} __attribute__((packed)) dj;
-				struct {
+		struct {
 			u32 _pad0 : 12;
 			u32 imm0 : 19;
 			u32 sgn : 1;
@@ -390,6 +400,8 @@ inline void PL_Decode::tick(CPU &cpu)
 	cpu.ex.s.w.reg_write = cf.reg_write && !cpu.de.s.r.v;
 	cpu.ex.s.w.result_src = cpu.de.s.r.v ? CUResSrc::ALU : cf.result_src;
 	cpu.ex.s.w.mem_write = cf.mem_write && !cpu.de.s.r.v;
+	cpu.ex.s.w.mem_op = cf.mem_op;
+	cpu.ex.s.w.mem_sgne = cf.mem_sgne;
 	cpu.ex.s.w.jump = cf.jump && !cpu.de.s.r.v;
 	cpu.ex.s.w.jreg = cf.jreg;
 	cpu.ex.s.w.branch = cf.branch && !cpu.de.s.r.v;
@@ -435,6 +447,8 @@ inline constexpr u32 ALUOperator(CUALUCtrl alu_ctrl, u32 a, u32 b)
 		return a | b;
 	case CUALUCtrl::AND:
 		return a & b;
+	case CUALUCtrl::ARG2:
+		return b;
 	default:
 		assert(0);
 	};
@@ -465,6 +479,8 @@ inline void PL_Execute::tick(CPU &cpu)
 {
 	cpu.mem.s.w.reg_write = cpu.ex.s.r.reg_write;
 	cpu.mem.s.w.mem_write = cpu.ex.s.r.mem_write;
+	cpu.mem.s.w.mem_op = cpu.ex.s.r.mem_op;
+	cpu.mem.s.w.mem_sgne = cpu.ex.s.r.mem_sgne;
 
 	cpu.mem.s.w.result_src = cpu.ex.s.r.result_src;
 	cpu.mem.s.w.reg_addr = cpu.ex.s.r.rda;
@@ -510,8 +526,28 @@ inline void PL_Memory::tick(CPU &cpu)
 	u32 mmu_rd = 0;
 	PL_HU::ExcType et;
 	if (cpu.mem.s.r.result_src == CUResSrc::MEM) {
-		if (!cpu.mmu.load(cpu, cpu.mem.s.r.alu_res, &mmu_rd, et))
+		if (!cpu.mmu.load(cpu, cpu.mem.s.r.alu_res & (~(u32)3), &mmu_rd, et))
 			cpu.hu.RaiseExcept(PL_HU::ExcStage::MEM, et, cpu.mem.s.r.pc);
+		u8 sh = cpu.mem.s.r.alu_res & ((u32)3);
+		u8 align;
+		mmu_rd >>= sh;
+		switch (cpu.mem.s.r.mem_op) {
+		case CUMemOp::B:
+			mmu_rd = cpu.mem.s.r.mem_sgne ? (i32)(i8)mmu_rd : (u8)mmu_rd;
+			align = 1;
+			break;
+		case CUMemOp::H:
+			mmu_rd = cpu.mem.s.r.mem_sgne ? (i32)(i16)mmu_rd : (u16)mmu_rd;
+			align = 2;
+			break;
+		case CUMemOp::W:
+			align = 4;
+			break;
+		default:
+			assert(0);
+		}
+		if (sh % align)
+			cpu.hu.RaiseExcept(PL_HU::ExcStage::MEM, PL_HU::ExcType::UNALIGNED_ADDR, cpu.mem.s.r.pc);
 	}
 	if (cpu.mem.s.r.mem_write) {
 		if (!cpu.mmu.store(cpu, cpu.mem.s.r.alu_res, cpu.mem.s.r.mem_wdata, et))

@@ -7,17 +7,6 @@
 namespace cpu
 {
 
-template <typename T, size_t sz>
-struct MapTab {
-	std::array<T, sz> tab;
-
-	constexpr MapTab(std::initializer_list<std::pair<size_t, T>> list)
-	{
-		for (auto const &e : list)
-			tab[e.first] = e.second;
-	}
-};
-
 union Instr {
 	u32 raw;
 	struct {
@@ -59,19 +48,7 @@ enum class CUALUSrc2 : u8 {
 	I = 1,
 };
 
-enum class CUALUCtrl : u8 {
-	X = 0,
-	ADD = 0,
-	SUB,
-	SLL,
-	SLT,
-	SLTU,
-	XOR,
-	SRL,
-	SRA,
-	OR,
-	AND,
-};
+enum class CUALUCtrl : u8 { X = 0, ADD = 0, SUB, SLL, SLT, SLTU, XOR, SRL, SRA, OR, AND, ARG2 };
 
 enum class CUCMPCtrl : u8 {
 	X = 0,
@@ -83,32 +60,29 @@ enum class CUCMPCtrl : u8 {
 	GEU,
 };
 
+enum class CUMemOp : u8 {
+	W,
+	H,
+	B,
+	X = W,
+};
+
 struct CUFlags_Main {
-	CUIType itype : 3;
-	bool reg_write : 1;
-	CUALUSrc1 alu_src1 : 1;
-	CUALUSrc2 alu_src2 : 1;
-	CUALUCtrl alu_control : 4;
-	CUCMPCtrl cmp_control : 4;
-	CUResSrc result_src : 2;
-	bool mem_write : 1;
-	bool branch : 1;
-	bool jump : 1;
-	bool jreg : 1;
-	bool intpt : 1;
-	bool opcode_ok : 1;
-	constexpr CUFlags_Main(CUIType itype_, bool reg_write_, CUALUSrc1 alu_src1_, CUALUSrc2 alu_src2_,
-			       CUALUCtrl alu_control_, CUCMPCtrl cmp_control_, CUResSrc result_src_, bool mem_write_,
-			       bool branch_, bool jump_, bool jreg_, bool intpt_)
-	    : itype(itype_), reg_write(reg_write_), alu_src1(alu_src1_), alu_src2(alu_src2_), alu_control(alu_control_),
-	      cmp_control(cmp_control_), result_src(result_src_), mem_write(mem_write_), branch(branch_), jump(jump_),
-	      jreg(jreg_), intpt(intpt_), opcode_ok(1)
-	{
-	}
-	constexpr CUFlags_Main()
-	    : itype(CUIType::R), reg_write(0), alu_src1(CUALUSrc1::X), alu_src2(CUALUSrc2::X),
-	      alu_control(CUALUCtrl::X), cmp_control(CUCMPCtrl::X), result_src(CUResSrc::X), mem_write(0), branch(0),
-	      jump(0), jreg(0), intpt(0), opcode_ok(0){};
+	CUIType itype : 3 = CUIType::R;
+	bool reg_write : 1 = false;
+	CUALUSrc1 alu_src1 : 1 = CUALUSrc1::X;
+	CUALUSrc2 alu_src2 : 1 = CUALUSrc2::X;
+	CUALUCtrl alu_control : 4 = CUALUCtrl::X;
+	CUCMPCtrl cmp_control : 4 = CUCMPCtrl::X;
+	CUResSrc result_src : 2 = CUResSrc::X;
+	bool mem_write : 1 = false;
+	CUMemOp mem_op : 2 = CUMemOp::W;
+	bool mem_sgne : 1 = false; 
+	bool branch : 1 = false;
+	bool jump : 1 = false;
+	bool jreg : 1 = false;
+	bool intpt : 1 = false;
+	bool opcode_ok : 1 = false;
 } __attribute__((packed));
 
 CUFlags_Main GetCUFlags(Instr inst);
@@ -116,6 +90,17 @@ char const *GetOpcodeStr(Instr inst);
 std::ostream &operator<<(std::ostream &os, Instr inst);
 
 #if 0
+template <typename T, size_t sz>
+struct MapTab {
+	std::array<T, sz> tab;
+
+	constexpr MapTab(std::initializer_list<std::pair<size_t, T>> list)
+	{
+		for (auto const &e : list)
+			tab[e.first] = e.second;
+	}
+};
+
 extern const MapTab<CUFlags_Main, 128> cu_flags_map;
 static inline CUFlags_Main GetCUFlags(Instr inst)
 {
