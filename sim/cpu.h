@@ -528,7 +528,7 @@ inline void PL_Memory::tick(CPU &cpu)
 	if (cpu.mem.s.r.result_src == CUResSrc::MEM) {
 		if (!cpu.mmu.load(cpu, cpu.mem.s.r.alu_res & (~(u32)3), &mmu_rd, et))
 			cpu.hu.RaiseExcept(PL_HU::ExcStage::MEM, et, cpu.mem.s.r.pc);
-		u8 sh = cpu.mem.s.r.alu_res & ((u32)3);
+		u8 sh = 8 * (cpu.mem.s.r.alu_res & ((u32)3));
 		u8 align;
 		mmu_rd >>= sh;
 		switch (cpu.mem.s.r.mem_op) {
@@ -549,9 +549,39 @@ inline void PL_Memory::tick(CPU &cpu)
 		if (sh % align)
 			cpu.hu.RaiseExcept(PL_HU::ExcStage::MEM, PL_HU::ExcType::UNALIGNED_ADDR, cpu.mem.s.r.pc);
 	}
-	if (cpu.mem.s.r.mem_write) {
-		if (!cpu.mmu.store(cpu, cpu.mem.s.r.alu_res, cpu.mem.s.r.mem_wdata, et))
+	if (delayed_write.active) {
+		if (!cpu.mmu.store(cpu, delayed_write.a, delayed_write.d, et))
 			cpu.hu.RaiseExcept(PL_HU::ExcStage::MEM, et, cpu.mem.s.r.pc);
+		delayed_write.active = false;
+	} else if (cpu.mem.s.r.mem_write) {
+		u32 wmask = 0;
+		switch (cpu.mem.s.r.mem_op) {
+		case CUMemOp::B:
+			wmask = 0xff;
+			delayed_write.active = true;
+			break;
+		case CUMemOp::H:
+			wmask = 0xffff;
+			delayed_write.active = true;
+			break;
+		case CUMemOp::W:
+			if (!cpu.mmu.store(cpu, cpu.mem.s.r.alu_res, cpu.mem.s.r.mem_wdata, et))
+				cpu.hu.RaiseExcept(PL_HU::ExcStage::MEM, et, cpu.mem.s.r.pc);
+			break;
+		default:
+			assert(0);
+		}
+		if (delayed_write.active) {
+			u8 sh = 8 * (cpu.mem.s.r.alu_res & ((u32)3));
+			delayed_write.a = cpu.mem.s.r.alu_res & (~(u32)3);
+			if (!cpu.mmu.load(cpu, delayed_write.a, &delayed_write.d, et)) {
+				cpu.hu.RaiseExcept(PL_HU::ExcStage::MEM, et, cpu.mem.s.r.pc);
+				delayed_write.active = false;
+			}
+			delayed_write.d &= ~(wmask << sh);
+			delayed_write.d |= ((wmask & cpu.mem.s.r.mem_wdata) << sh);
+		}
+		// check sub-store alignment
 	}
 
 	switch (cpu.mem.s.r.result_src) {
@@ -598,12 +628,19 @@ inline void PL_HU::tick(CPU &cpu)
 			   ((cpu.ex.s.r.rda == cpu.de.s.r.inst.rs1) || (cpu.ex.s.r.rda == cpu.de.s.r.inst.rs2));
 
 	bool pc_flush = cpu.ex.pc_r;
+	bool mem_stall = cpu.mem.delayed_write.active;
+
+	if (mem_stall) {
+		pc_flush = false;
+		load_hazard = false;
+		exc_stage = ExcStage::NO;
+	}
 
 	if ((pc_flush || load_hazard) && exc_stage <= ExcStage::DE) {
 		exc_stage = ExcStage::NO;
 	}
 
-	if (exc_stage >= ExcStage::MEM) {
+	if (exc_stage >= ExcStage::MEM || mem_stall) {
 		cpu.wb.s.w.reg_write = 0;
 		cpu.wb.s.w._dbg_trace = 0;
 		cpu.wb.s.tick(cpu);
@@ -618,7 +655,7 @@ inline void PL_HU::tick(CPU &cpu)
 		cpu.mem.s.w.result_src = CUResSrc::ALU;
 		cpu.mem.s.w._dbg_trace = 0;
 		cpu.mem.s.tick(cpu);
-	} else if (!false) {
+	} else if (!mem_stall) {
 		cpu.mem.s.w._dbg_trace = cpu.ex.s.r._dbg_trace;
 		cpu.mem.s.tick(cpu);
 	}
@@ -632,7 +669,7 @@ inline void PL_HU::tick(CPU &cpu)
 		cpu.ex.s.w.intpt = 0;
 		cpu.ex.s.w._dbg_trace = 0;
 		cpu.ex.s.tick(cpu);
-	} else if (!false) {
+	} else if (!mem_stall) {
 		cpu.ex.s.w._dbg_trace = cpu.de.s.r._dbg_trace;
 		cpu.ex.s.tick(cpu);
 	}
@@ -641,7 +678,7 @@ inline void PL_HU::tick(CPU &cpu)
 		cpu.de.s.w.v = 1;
 		cpu.de.s.w._dbg_trace = 0;
 		cpu.de.s.tick(cpu);
-	} else if (!load_hazard) {
+	} else if (!(load_hazard || mem_stall)) {
 		cpu.de.s.w._dbg_trace = 1;
 		cpu.de.s.tick(cpu);
 	}
@@ -649,7 +686,7 @@ inline void PL_HU::tick(CPU &cpu)
 	if (exc_stage > ExcStage::NO) {
 		cpu.fe.s.w.pc = cpu.tvec;
 		cpu.fe.s.tick(cpu);
-	} else if (!load_hazard) {
+	} else if (!(load_hazard || mem_stall)) {
 		cpu.fe.s.tick(cpu);
 	}
 	exc_stage = ExcStage::NO;

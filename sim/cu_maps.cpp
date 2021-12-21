@@ -69,6 +69,7 @@ static constexpr CUFlags_Main BuildLoad()
 	return cf;
 }
 
+template <CUMemOp mem_op>
 static constexpr CUFlags_Main BuildStore()
 {
 	CUFlags_Main cf;
@@ -77,7 +78,7 @@ static constexpr CUFlags_Main BuildStore()
 	cf.alu_src2 = CUALUSrc2::I;
 	cf.alu_control = CUALUCtrl::ADD;
 	cf.mem_write = true;
-	cf.mem_op = CUMemOp::W;
+	cf.mem_op = mem_op;
 	cf.mem_sgne = 0;
 	cf.opcode_ok = true;
 	return cf;
@@ -106,11 +107,17 @@ auto constexpr cf_bge = BuildBranch<CUCMPCtrl::GE>();
 auto constexpr cf_bltu = BuildBranch<CUCMPCtrl::LTU>();
 auto constexpr cf_bgeu = BuildBranch<CUCMPCtrl::GEU>();
 
+auto constexpr cf_lb = BuildLoad<CUMemOp::B, true>();
+auto constexpr cf_lh = BuildLoad<CUMemOp::H, true>();
 auto constexpr cf_lw = BuildLoad<CUMemOp::W, false>();
 auto constexpr cf_lbu = BuildLoad<CUMemOp::B, false>();
-auto constexpr cf_sw = BuildStore();
+auto constexpr cf_lhu = BuildLoad<CUMemOp::H, false>();
+auto constexpr cf_sb = BuildStore<CUMemOp::B>();
+auto constexpr cf_sh = BuildStore<CUMemOp::H>();
+auto constexpr cf_sw = BuildStore<CUMemOp::W>();
 
 auto constexpr cf_addi = BuildArithm<CUIType::I, CUALUCtrl::ADD>();
+auto constexpr cf_slti = BuildArithm<CUIType::I, CUALUCtrl::SLT>();
 auto constexpr cf_sltiu = BuildArithm<CUIType::I, CUALUCtrl::SLTU>();
 auto constexpr cf_xori = BuildArithm<CUIType::I, CUALUCtrl::XOR>();
 auto constexpr cf_ori = BuildArithm<CUIType::I, CUALUCtrl::OR>();
@@ -122,8 +129,10 @@ auto constexpr cf_srli = BuildArithm<CUIType::I, CUALUCtrl::SRL>();
 auto constexpr cf_add = BuildArithm<CUIType::R, CUALUCtrl::ADD>();
 auto constexpr cf_sub = BuildArithm<CUIType::R, CUALUCtrl::SUB>();
 auto constexpr cf_sll = BuildArithm<CUIType::R, CUALUCtrl::SLL>();
+auto constexpr cf_slt = BuildArithm<CUIType::R, CUALUCtrl::SLT>();
 auto constexpr cf_sltu = BuildArithm<CUIType::R, CUALUCtrl::SLTU>();
 auto constexpr cf_xor = BuildArithm<CUIType::R, CUALUCtrl::XOR>();
+auto constexpr cf_sra = BuildArithm<CUIType::R, CUALUCtrl::SRA>();
 auto constexpr cf_srl = BuildArithm<CUIType::R, CUALUCtrl::SRL>();
 auto constexpr cf_or = BuildArithm<CUIType::R, CUALUCtrl::OR>();
 auto constexpr cf_and = BuildArithm<CUIType::R, CUALUCtrl::AND>();
@@ -131,7 +140,6 @@ auto constexpr cf_and = BuildArithm<CUIType::R, CUALUCtrl::AND>();
 auto constexpr cf_ebreak = BuildEcall();
 
 #define CPU_DECODE_SWITCH                                                                                              \
-	CUFlags_Main res;                                                                                              \
 	switch (inst.op) {                                                                                             \
 	case 0b0110111:                                                                                                \
 		return OP(lui);                                                                                        \
@@ -166,24 +174,24 @@ auto constexpr cf_ebreak = BuildEcall();
 	case 0b0000011: /* lX */                                                                                       \
 		switch (inst.funct3) {                                                                                 \
 		case 0b000:                                                                                            \
-			assert(!"lb");                                                                                 \
+			return OP(lb);                                                                                 \
 		case 0b001:                                                                                            \
-			assert(!"lh");                                                                                 \
+			return OP(lh);                                                                                 \
 		case 0b010:                                                                                            \
 			return OP(lw);                                                                                 \
 		case 0b100:                                                                                            \
 			return OP(lbu);                                                                                \
 		case 0b101:                                                                                            \
-			assert(!"lhu");                                                                                \
+			return OP(lhu);                                                                                \
 		default:                                                                                               \
 			return OP(ill);                                                                                \
 		}                                                                                                      \
 	case 0b0100011: /* sX */                                                                                       \
 		switch (inst.funct3) {                                                                                 \
 		case 0b000:                                                                                            \
-			assert(!"sb");                                                                                 \
+			return OP(sb);                                                                                 \
 		case 0b001:                                                                                            \
-			assert(!"sh");                                                                                 \
+			return OP(sh);                                                                                 \
 		case 0b010:                                                                                            \
 			return OP(sw);                                                                                 \
 		default:                                                                                               \
@@ -194,7 +202,7 @@ auto constexpr cf_ebreak = BuildEcall();
 		case 0b000:                                                                                            \
 			return OP(addi);                                                                               \
 		case 0b010:                                                                                            \
-			assert(!"slti");                                                                               \
+			return OP(slti);                                                                               \
 		case 0b011:                                                                                            \
 			return OP(sltiu);                                                                              \
 		case 0b100:                                                                                            \
@@ -221,14 +229,14 @@ auto constexpr cf_ebreak = BuildEcall();
 		case 0b001:                                                                                            \
 			return OP(sll);                                                                                \
 		case 0b010:                                                                                            \
-			assert(!"slt");                                                                                \
+			return OP(slt);                                                                                \
 		case 0b011:                                                                                            \
 			return OP(sltu);                                                                               \
 		case 0b100:                                                                                            \
 			return OP(xor);                                                                                \
 		case 0b101:                                                                                            \
 			if (inst.funct7 >> 5)                                                                          \
-				assert("!sra");                                                                        \
+				return OP(sra);                                                                        \
 			return OP(srl);                                                                                \
 		case 0b110:                                                                                            \
 			return OP(or);                                                                                 \

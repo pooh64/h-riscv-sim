@@ -1,9 +1,14 @@
 void __attribute__((naked)) _start()
 {
-	__asm__("la gp, __global_pointer$\n\t"
-		"li sp, 1024\n\t"
+	__asm__("li sp, 1024\n\t"
 		"jal ra, main\n\t"
 		"ebreak\n\t");
+}
+
+void __attribute__((naked)) _init_gp()
+{
+	__asm__("la gp, __global_pointer$\n\t"
+		"jr ra\n\t");
 }
 
 int __clzsi2(int val)
@@ -37,5 +42,6 @@ float find_pi(int prec)
 
 int main(int arg)
 {
+	_init_gp();
 	return (int)(100000000L * find_pi(arg));
 }

@@ -240,7 +240,7 @@ void execute_elf(char const *path, char const **args, int nargs)
 	std::cout << "epc: " << env.cpusim.hu.exc_pc << "\n";
 	std::cout << "ecause: " << (u32)env.cpusim.hu.exc_cause << "\n";
 	std::cout << "Process returned: " << env.cpusim.de.regfile.gpr[10] << "\n";
-	assert(env.cpusim.hu.exc_pc == entry_va + 4 * 4);
+	assert(env.cpusim.hu.exc_pc == entry_va + 4 * 2);
 	assert(env.cpusim.hu.exc_cause == cpu::PL_HU::ExcType::INT);
 }
 
